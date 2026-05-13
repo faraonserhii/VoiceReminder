@@ -1,0 +1,2135 @@
+package com.proapps.voiceremind
+
+import android.Manifest
+import android.content.ContentValues
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
+import android.provider.Settings
+import android.text.format.DateFormat
+import android.view.LayoutInflater
+import android.provider.CalendarContract
+import android.speech.RecognizerIntent
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
+import android.widget.Button
+import android.widget.EditText
+import android.widget.ImageButton
+import android.widget.LinearLayout
+import android.widget.TextView
+import android.widget.Toast
+import android.view.View
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import androidx.core.os.LocaleListCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.widget.doAfterTextChanged
+import com.google.android.material.datepicker.CalendarConstraints
+import com.google.android.material.datepicker.DateValidatorPointForward
+import com.google.android.material.datepicker.MaterialDatePicker
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.snackbar.Snackbar
+import com.google.android.material.switchmaterial.SwitchMaterial
+import com.google.android.material.textfield.TextInputLayout
+import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.timepicker.MaterialTimePicker
+import com.google.android.material.timepicker.TimeFormat
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.proapps.voiceremind.geofence.StoreGeofenceManager
+import com.proapps.voiceremind.messaging.MessageReminderNotifier
+import com.proapps.voiceremind.messaging.MessageReminderScheduler
+import com.proapps.voiceremind.weather.OpenMeteoClient
+import com.proapps.voiceremind.weather.WeatherAlertNotifier
+import com.proapps.voiceremind.weather.WeatherAlertScheduler
+import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+
+private const val STATE_INPUT_TEXT = "state_input_text"
+private const val STATE_PENDING_TITLE = "state_pending_title"
+private const val STATE_PENDING_DATETIME = "state_pending_datetime"
+private const val STATE_PENDING_USED_DEFAULT_TIME = "state_pending_used_default_time"
+private const val STATE_PENDING_LOCATION = "state_pending_location"
+private const val STATE_PENDING_DURATION = "state_pending_duration"
+private const val DRAFT_PREFS = "draft_prefs"
+private const val DRAFT_INPUT_TEXT = "draft_input_text"
+private const val DRAFT_PENDING_TITLE = "draft_pending_title"
+private const val DRAFT_PENDING_DATETIME = "draft_pending_datetime"
+private const val DRAFT_PENDING_USED_DEFAULT_TIME = "draft_pending_used_default_time"
+private const val DRAFT_PENDING_LOCATION = "draft_pending_location"
+private const val DRAFT_PENDING_DURATION = "draft_pending_duration"
+private const val FIRST_LAUNCH_PREFS = "first_launch_prefs"
+private const val FIRST_LAUNCH_PERMISSIONS_REQUESTED = "first_launch_permissions_requested"
+private const val FIRST_LAUNCH_PERMISSIONS_DEFERRED = "first_launch_permissions_deferred"
+private const val FIRST_LAUNCH_GENTLE_REMINDER_SHOWN = "first_launch_gentle_reminder_shown"
+private const val WEATHER_PREFS = "weather_prefs"
+private const val WEATHER_FALLBACK_CITY = "weather_fallback_city"
+private const val APP_SETTINGS_PREFS = "app_settings_prefs"
+private const val DEFAULT_REMINDER_TIME = "default_reminder_time"
+private const val HANDS_FREE_VOICE_CONFIRMATION_ENABLED = "hands_free_voice_confirmation_enabled"
+private const val HSL_PACKAGE = "fi.hsl.app"
+private const val GOOGLE_MAPS_PACKAGE = "com.google.android.apps.maps"
+private const val VOICE_CONFIRM_UTTERANCE_ID = "voice_confirm_utterance"
+private const val LIBRARY_CLOSING_HOUR = 20
+private const val LIBRARY_REMINDER_TWO_DAYS_MINUTES = 2 * 24 * 60
+private const val LIBRARY_REMINDER_ONE_HOUR_MINUTES = 60
+private const val TIRE_FROST_CHECK_DAYS = 16
+private const val TIRE_FREEZE_THRESHOLD_C = "tire_freeze_threshold_c"
+private const val TIRE_SUMMER_DAY = "tire_summer_day"
+private const val TIRE_SUMMER_MONTH = "tire_summer_month"
+private const val TIRE_WINTER_DAY = "tire_winter_day"
+private const val TIRE_WINTER_MONTH = "tire_winter_month"
+private const val NIGHT_SILENT_MODE_ENABLED = "night_silent_mode_enabled"
+private const val EMOJI_CATEGORIES_ENABLED = "emoji_categories_enabled"
+private const val PENDING_STORE_GEO_REQUEST = "pending_store_geo_request"
+private const val QUIET_HOURS_START = 22
+private const val QUIET_HOURS_END = 7
+private const val QUIET_FEEDBACK_VIBRATION_MS = 120L
+
+private enum class PermissionRetryType {
+    INITIAL,
+    CALENDAR
+}
+
+class MainActivity : AppCompatActivity() {
+
+    private lateinit var parser: ReminderParser
+    private val dateFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy", Locale.getDefault())
+    private val timeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault())
+
+    private lateinit var reminderInput: TextInputEditText
+    private lateinit var parsedPreview: TextView
+    private lateinit var permissionsMicStatusText: TextView
+    private lateinit var permissionsCalendarStatusText: TextView
+    private lateinit var permissionsMicStatusRow: View
+    private lateinit var permissionsCalendarStatusRow: View
+    private lateinit var permissionsMicInfoButton: ImageButton
+    private lateinit var permissionsCalendarInfoButton: ImageButton
+    private lateinit var weatherFallbackCityText: TextView
+    private lateinit var weatherFallbackCityButton: Button
+    private lateinit var defaultReminderTimeText: TextView
+    private lateinit var defaultReminderTimeButton: Button
+    private lateinit var handsFreeVoiceStatusText: TextView
+    private lateinit var handsFreeVoiceSwitch: SwitchMaterial
+    private lateinit var nightSilentModeStatusText: TextView
+    private lateinit var nightSilentModeSwitch: SwitchMaterial
+    private lateinit var emojiCategoriesStatusText: TextView
+    private lateinit var emojiCategoriesSwitch: SwitchMaterial
+    private lateinit var tireFreezeThresholdText: TextView
+    private lateinit var tireFreezeThresholdButton: Button
+    private lateinit var tirePolicyText: TextView
+    private lateinit var tirePolicyButton: Button
+    private lateinit var previewRouteButton: Button
+    private lateinit var editPendingButton: Button
+    private lateinit var clearDraftButton: Button
+    private lateinit var pendingActionsRow: View
+
+    private var pendingReminder: ParsedReminder? = null
+    private var lastClearedDraftSnapshot: DraftSnapshot? = null
+    private var pendingVoiceReminder: ParsedReminder? = null
+    private var pendingStoreGeoRequest: StoreGeoRequest? = null
+    private var isAwaitingVoiceDecision: Boolean = false
+    private var tts: TextToSpeech? = null
+    private var isTtsReady: Boolean = false
+
+    private val requestCalendarPermissions = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { result ->
+        val deniedPermissions = result
+            .filterValues { granted -> !granted }
+            .keys
+            .toList()
+        val granted = deniedPermissions.isEmpty()
+
+        if (granted) {
+            savePendingReminder()
+        } else {
+            val isPermanentDenial = deniedPermissions.any { isPermissionPermanentlyDenied(it) }
+            val messageType = PermissionDeniedMessageSelector.select(
+                microphoneDenied = false,
+                calendarDenied = true,
+                microphonePermanentlyDenied = false,
+                calendarPermanentlyDenied = isPermanentDenial
+            )
+            val messageRes = messageType?.let { permissionDeniedMessageRes(it) }
+
+            if (messageRes != null) {
+                Toast.makeText(this, getString(messageRes), Toast.LENGTH_LONG).show()
+                showPermissionDeniedFeedback(
+                    messageRes = messageRes,
+                    isPermanentDenial = isPermanentDenial,
+                    retryType = PermissionRetryType.CALENDAR,
+                    retryPermissions = null
+                )
+            }
+        }
+
+        updatePermissionsStatusUi()
+    }
+
+    private val requestInitialPermissions = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { result ->
+        // First-launch request is best-effort: app keeps working with fallbacks.
+        val deniedPermissions = result
+            .filterValues { granted -> !granted }
+            .keys
+            .toSet()
+
+        val microphoneDenied = deniedPermissions.contains(Manifest.permission.RECORD_AUDIO)
+        val calendarDenied = deniedPermissions.contains(Manifest.permission.READ_CALENDAR) ||
+            deniedPermissions.contains(Manifest.permission.WRITE_CALENDAR)
+        val microphonePermanentlyDenied = microphoneDenied && isPermissionPermanentlyDenied(Manifest.permission.RECORD_AUDIO)
+        val calendarPermanentlyDenied = calendarDenied && (
+            (deniedPermissions.contains(Manifest.permission.READ_CALENDAR) && isPermissionPermanentlyDenied(Manifest.permission.READ_CALENDAR)) ||
+                (deniedPermissions.contains(Manifest.permission.WRITE_CALENDAR) && isPermissionPermanentlyDenied(Manifest.permission.WRITE_CALENDAR))
+            )
+
+        val messageType = PermissionDeniedMessageSelector.select(
+            microphoneDenied = microphoneDenied,
+            calendarDenied = calendarDenied,
+            microphonePermanentlyDenied = microphonePermanentlyDenied,
+            calendarPermanentlyDenied = calendarPermanentlyDenied
+        )
+        val messageRes = messageType?.let { permissionDeniedMessageRes(it) }
+
+        if (messageRes != null) {
+            val hasPermanentDenial = microphonePermanentlyDenied || calendarPermanentlyDenied
+            showPermissionDeniedFeedback(
+                messageRes = messageRes,
+                isPermanentDenial = hasPermanentDenial,
+                retryType = PermissionRetryType.INITIAL,
+                retryPermissions = deniedPermissions.toTypedArray()
+            )
+        }
+
+        updatePermissionsStatusUi()
+    }
+
+    private val requestStoreGeoPermissions = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { result ->
+        val granted = result.values.all { it }
+        val pending = pendingStoreGeoRequest
+
+        if (!granted || pending == null) {
+            pendingStoreGeoRequest = null
+            if (!granted) {
+                Toast.makeText(this, getString(R.string.store_geo_permission_required), Toast.LENGTH_LONG).show()
+            }
+            return@registerForActivityResult
+        }
+
+        pendingStoreGeoRequest = null
+        registerStoreGeoReminder(pending)
+    }
+
+    private val speechLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val spokenText = result.data
+            ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            ?.firstOrNull()
+            .orEmpty()
+
+        if (spokenText.isBlank()) {
+            Toast.makeText(this, getString(R.string.voice_input_failed), Toast.LENGTH_SHORT).show()
+            return@registerForActivityResult
+        }
+
+        if (isAwaitingVoiceDecision) {
+            handleVoiceDecision(spokenText)
+            return@registerForActivityResult
+        }
+
+        reminderInput.setText(spokenText)
+        updatePreview(spokenText)
+
+        val prepared = parseReminderWithDomainFallback(spokenText)
+        if (prepared == null) {
+            return@registerForActivityResult
+        }
+
+        if (isHandsFreeVoiceConfirmationEnabled()) {
+            askVoiceConfirmation(prepared)
+        }
+    }
+
+    private val takePhotoLauncher = registerForActivityResult(
+        ActivityResultContracts.TakePicturePreview()
+    ) { bitmap ->
+        if (bitmap == null) {
+            Toast.makeText(this, getString(R.string.ocr_failed), Toast.LENGTH_SHORT).show()
+            return@registerForActivityResult
+        }
+        processAnnouncementPhoto(bitmap)
+    }
+
+    private val pickPhotoLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri == null) {
+            Toast.makeText(this, getString(R.string.ocr_pick_failed), Toast.LENGTH_SHORT).show()
+            return@registerForActivityResult
+        }
+        processAnnouncementPhotoFromUri(uri)
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        // Always follow device locale. This also clears any previously saved app locale override.
+        AppCompatDelegate.setApplicationLocales(LocaleListCompat.getEmptyLocaleList())
+        super.onCreate(savedInstanceState)
+        parser = createReminderParser()
+        initTextToSpeech()
+        enableEdgeToEdge()
+        setContentView(R.layout.activity_main)
+
+        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
+            insets
+        }
+
+        reminderInput = findViewById(R.id.reminderInput)
+        parsedPreview = findViewById(R.id.parsedPreview)
+        permissionsMicStatusText = findViewById(R.id.permissionsMicStatusText)
+        permissionsCalendarStatusText = findViewById(R.id.permissionsCalendarStatusText)
+        permissionsMicStatusRow = findViewById(R.id.permissionsMicStatusRow)
+        permissionsCalendarStatusRow = findViewById(R.id.permissionsCalendarStatusRow)
+        permissionsMicInfoButton = findViewById(R.id.permissionsMicInfoButton)
+        permissionsCalendarInfoButton = findViewById(R.id.permissionsCalendarInfoButton)
+        weatherFallbackCityText = findViewById(R.id.weatherFallbackCityText)
+        weatherFallbackCityButton = findViewById(R.id.weatherFallbackCityButton)
+        defaultReminderTimeText = findViewById(R.id.defaultReminderTimeText)
+        defaultReminderTimeButton = findViewById(R.id.defaultReminderTimeButton)
+        handsFreeVoiceStatusText = findViewById(R.id.handsFreeVoiceStatusText)
+        handsFreeVoiceSwitch = findViewById(R.id.handsFreeVoiceSwitch)
+        nightSilentModeStatusText = findViewById(R.id.nightSilentModeStatusText)
+        nightSilentModeSwitch = findViewById(R.id.nightSilentModeSwitch)
+        emojiCategoriesStatusText = findViewById(R.id.emojiCategoriesStatusText)
+        emojiCategoriesSwitch = findViewById(R.id.emojiCategoriesSwitch)
+        tireFreezeThresholdText = findViewById(R.id.tireFreezeThresholdText)
+        tireFreezeThresholdButton = findViewById(R.id.tireFreezeThresholdButton)
+        tirePolicyText = findViewById(R.id.tirePolicyText)
+        tirePolicyButton = findViewById(R.id.tirePolicyButton)
+        previewRouteButton = findViewById(R.id.previewRouteButton)
+        editPendingButton = findViewById(R.id.editPendingButton)
+        clearDraftButton = findViewById(R.id.clearDraftButton)
+        pendingActionsRow = findViewById(R.id.pendingActionsRow)
+
+        findViewById<Button>(R.id.voiceButton).setOnClickListener {
+            if (maybeShowDeferredPermissionReminderForVoice()) {
+                return@setOnClickListener
+            }
+            startVoiceInput()
+        }
+
+        findViewById<Button>(R.id.photoButton).setOnClickListener {
+            showPhotoSourceDialog()
+        }
+
+        findViewById<Button>(R.id.previewButton).setOnClickListener {
+            updatePreview(reminderInput.text?.toString().orEmpty())
+        }
+
+        previewRouteButton.setOnClickListener {
+            val parsed = pendingReminder ?: parseReminderWithDomainFallback(reminderInput.text?.toString().orEmpty())
+            val destination = parsed?.location.orEmpty().trim()
+            if (destination.isBlank()) {
+                Toast.makeText(this, getString(R.string.route_location_missing), Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+            openDirections(destination, parsed!!.eventDateTime)
+        }
+
+        reminderInput.doAfterTextChanged {
+            saveDraftToPrefs()
+        }
+
+        findViewById<Button>(R.id.saveButton).setOnClickListener {
+            if (maybeShowDeferredPermissionReminderForCalendar()) {
+                return@setOnClickListener
+            }
+
+            val text = reminderInput.text?.toString().orEmpty()
+            val parsed = parseReminderWithDomainFallback(text)
+
+            if (parsed == null) {
+                pendingReminder = null
+                updatePendingEditVisibility()
+                saveDraftToPrefs()
+                parsedPreview.text = getString(R.string.parse_failed_hint)
+                Toast.makeText(this, getString(R.string.parse_failed_toast), Toast.LENGTH_LONG).show()
+                openSystemEventForm(text)
+                return@setOnClickListener
+            }
+
+            showConfirmationDialog(parsed)
+        }
+
+        editPendingButton.setOnClickListener {
+            val reminder = pendingReminder ?: return@setOnClickListener
+            showConfirmationDialog(reminder)
+        }
+
+        clearDraftButton.setOnClickListener {
+            showClearDraftConfirmDialog()
+        }
+
+        weatherFallbackCityButton.setOnClickListener {
+            showWeatherFallbackCityDialog()
+        }
+
+        defaultReminderTimeButton.setOnClickListener {
+            showDefaultReminderTimeDialog()
+        }
+
+        handsFreeVoiceSwitch.isChecked = isHandsFreeVoiceConfirmationEnabled()
+        updateHandsFreeVoiceStatusUi(handsFreeVoiceSwitch.isChecked)
+        handsFreeVoiceSwitch.setOnCheckedChangeListener { _, isChecked ->
+            setHandsFreeVoiceConfirmationEnabled(isChecked)
+            updateHandsFreeVoiceStatusUi(isChecked)
+        }
+
+        nightSilentModeSwitch.isChecked = isNightSilentModeEnabled()
+        updateNightSilentModeStatusUi(nightSilentModeSwitch.isChecked)
+        nightSilentModeSwitch.setOnCheckedChangeListener { _, isChecked ->
+            setNightSilentModeEnabled(isChecked)
+            updateNightSilentModeStatusUi(isChecked)
+        }
+
+        emojiCategoriesSwitch.isChecked = isEmojiCategoriesEnabled()
+        updateEmojiCategoriesStatusUi(emojiCategoriesSwitch.isChecked)
+        emojiCategoriesSwitch.setOnCheckedChangeListener { _, isChecked ->
+            setEmojiCategoriesEnabled(isChecked)
+            updateEmojiCategoriesStatusUi(isChecked)
+            val currentText = reminderInput.text?.toString().orEmpty()
+            if (currentText.isNotBlank()) {
+                updatePreview(currentText)
+            }
+        }
+
+        tireFreezeThresholdButton.setOnClickListener {
+            showTireFreezeThresholdDialog()
+        }
+
+        tirePolicyButton.setOnClickListener {
+            showTirePolicyDatesDialog()
+        }
+
+        permissionsMicInfoButton.setOnClickListener {
+            showPermissionPurposeDialog(
+                titleRes = R.string.permissions_mic_info_title,
+                messageRes = R.string.permissions_mic_info_message
+            )
+        }
+
+        permissionsMicStatusRow.setOnClickListener {
+            showPermissionPurposeDialog(
+                titleRes = R.string.permissions_mic_info_title,
+                messageRes = R.string.permissions_mic_info_message
+            )
+        }
+        permissionsMicStatusRow.setOnLongClickListener {
+            requestMicrophonePermissionFromStatus()
+            true
+        }
+
+        permissionsCalendarInfoButton.setOnClickListener {
+            showPermissionPurposeDialog(
+                titleRes = R.string.permissions_calendar_info_title,
+                messageRes = R.string.permissions_calendar_info_message
+            )
+        }
+
+        permissionsCalendarStatusRow.setOnClickListener {
+            showPermissionPurposeDialog(
+                titleRes = R.string.permissions_calendar_info_title,
+                messageRes = R.string.permissions_calendar_info_message
+            )
+        }
+        permissionsCalendarStatusRow.setOnLongClickListener {
+            requestCalendarPermissionsFromStatus()
+            true
+        }
+
+        restoreState(savedInstanceState)
+        if (savedInstanceState == null) {
+            if (restoreDraftFromPrefs()) {
+                showDraftRestoredSnackbar()
+            }
+            requestPermissionsOnFirstLaunchIfNeeded()
+        }
+
+        updatePermissionsStatusUi()
+        updateWeatherFallbackCityUi()
+        updateDefaultReminderTimeUi()
+        updateTireSettingsUi()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        saveDraftToPrefs()
+    }
+
+    override fun onDestroy() {
+        tts?.stop()
+        tts?.shutdown()
+        tts = null
+        super.onDestroy()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        updatePermissionsStatusUi()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+
+        outState.putString(STATE_INPUT_TEXT, reminderInput.text?.toString().orEmpty())
+
+        val reminder = pendingReminder ?: return
+        outState.putString(STATE_PENDING_TITLE, reminder.title)
+        outState.putString(STATE_PENDING_DATETIME, reminder.eventDateTime.toString())
+        outState.putBoolean(STATE_PENDING_USED_DEFAULT_TIME, reminder.usedDefaultTime)
+        outState.putString(STATE_PENDING_LOCATION, reminder.location)
+        outState.putInt(STATE_PENDING_DURATION, reminder.durationMinutes)
+    }
+
+    private fun updatePreview(text: String) {
+        val parsed = parseReminderWithDomainFallback(text)
+        if (parsed == null) {
+            parsedPreview.text = getString(R.string.parse_failed_hint)
+            previewRouteButton.isEnabled = false
+            return
+        }
+
+        parsedPreview.text = getString(
+            R.string.preview_template,
+            parsed.title,
+            parsed.eventDateTime.format(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm", Locale.getDefault())),
+            if (parsed.usedDefaultTime) {
+                getString(R.string.default_time_note, parsed.eventDateTime.toLocalTime().format(timeFormatter))
+            } else {
+                ""
+            },
+            parsed.location ?: getString(R.string.location_not_specified),
+            getString(R.string.duration_minutes_template, parsed.durationMinutes)
+        )
+        previewRouteButton.isEnabled = !parsed.location.isNullOrBlank()
+    }
+
+    private fun ensureCalendarPermissionAndSave() {
+        val hasRead = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.READ_CALENDAR
+        ) == PackageManager.PERMISSION_GRANTED
+        val hasWrite = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.WRITE_CALENDAR
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (hasRead && hasWrite) {
+            savePendingReminder()
+            return
+        }
+
+        requestCalendarPermissions.launch(
+            arrayOf(
+                Manifest.permission.READ_CALENDAR,
+                Manifest.permission.WRITE_CALENDAR
+            )
+        )
+    }
+
+    private fun savePendingReminder() {
+        val reminder = pendingReminder ?: return
+        val calendarId = getWritableCalendarId()
+
+        if (calendarId == null) {
+            Toast.makeText(this, getString(R.string.calendar_not_found), Toast.LENGTH_LONG).show()
+            return
+        }
+
+        val startMillis = reminder.eventDateTime
+            .atZone(ZoneId.systemDefault())
+            .toInstant()
+            .toEpochMilli()
+        val endMillis = reminder.eventDateTime
+            .plusMinutes(reminder.durationMinutes.toLong())
+            .atZone(ZoneId.systemDefault())
+            .toInstant()
+            .toEpochMilli()
+
+        val values = ContentValues().apply {
+            put(CalendarContract.Events.CALENDAR_ID, calendarId)
+            put(CalendarContract.Events.TITLE, reminder.title)
+            put(CalendarContract.Events.DESCRIPTION, reminder.title)
+            reminder.location?.let { put(CalendarContract.Events.EVENT_LOCATION, it) }
+            put(CalendarContract.Events.DTSTART, startMillis)
+            put(CalendarContract.Events.DTEND, endMillis)
+            put(CalendarContract.Events.EVENT_TIMEZONE, ZoneId.systemDefault().id)
+        }
+
+        val createdUri = contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)
+        if (createdUri != null) {
+            val eventId = createdUri.lastPathSegment ?: "${reminder.title}_${startMillis}"
+            createdUri.lastPathSegment?.toLongOrNull()?.let { eventIdLong ->
+                addLibraryReturnRemindersIfNeeded(eventIdLong, reminder)
+                maybeRegisterStoreGeoReminder(eventIdLong, reminder)
+            }
+            maybeWarnEarlyFrostForTires(reminder)
+
+            MessageReminderNotifier.ensureChannel(this)
+            scheduleMessageReminderIfNeeded(
+                reminder = reminder,
+                eventId = eventId,
+                triggerEpochMillis = startMillis
+            )
+
+            WeatherAlertNotifier.ensureChannel(this)
+            WeatherAlertScheduler.schedule(
+                context = this,
+                eventId = eventId,
+                eventTitle = reminder.title,
+                eventLocation = reminder.location.orEmpty(),
+                fallbackLocation = getWeatherFallbackCity(),
+                eventEpochMillis = startMillis,
+                timezoneId = ZoneId.systemDefault().id
+            )
+
+            val message = if (reminder.usedDefaultTime) {
+                getString(R.string.saved_with_default_time, reminder.eventDateTime.toLocalTime().format(timeFormatter))
+            } else {
+                getString(R.string.saved_successfully)
+            }
+            Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+            showDirectionsAction(reminder)
+            parsedPreview.text = getString(R.string.saved_event_preview, reminder.title)
+            reminderInput.text?.clear()
+            pendingReminder = null
+            updatePendingEditVisibility()
+            clearDraftFromPrefs()
+        } else {
+            Toast.makeText(this, getString(R.string.save_failed), Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun scheduleMessageReminderIfNeeded(
+        reminder: ParsedReminder,
+        eventId: String,
+        triggerEpochMillis: Long
+    ) {
+        val rawInput = reminderInput.text?.toString().orEmpty()
+        val command = MessageReminderParser.extract(rawInput) ?: return
+        val recipient = command.recipient?.ifBlank { reminder.location }
+
+        MessageReminderScheduler.schedule(
+            context = this,
+            reminderId = eventId,
+            triggerEpochMillis = triggerEpochMillis,
+            recipient = recipient,
+            messageText = command.messageText,
+            preferredChannel = command.preferredChannel.name
+        )
+    }
+
+    private fun applyDomainDefaults(reminder: ParsedReminder): ParsedReminder {
+        val withCategory = if (isEmojiCategoriesEnabled()) {
+            reminder.copy(title = ReminderCategoryEmoji.apply(reminder.title))
+        } else {
+            reminder
+        }
+
+        if (!isLibraryReturnReminder(withCategory) || !withCategory.usedDefaultTime) {
+            return withCategory
+        }
+
+        val closingTime = LocalTime.of(LIBRARY_CLOSING_HOUR, 0)
+        return withCategory.copy(
+            eventDateTime = LocalDateTime.of(withCategory.eventDateTime.toLocalDate(), closingTime)
+        )
+    }
+
+    private fun parseReminderWithDomainFallback(rawText: String): ParsedReminder? {
+        val parsed = parser.parse(rawText)
+        if (parsed != null) {
+            return applyDomainDefaults(parsed)
+        }
+
+        MessageReminderParser.extract(rawText)?.let { command ->
+            val triggerDateTime = command.resolveTriggerDateTime(
+                now = LocalDateTime.now(),
+                defaultTime = getConfiguredDefaultReminderTime()
+            )
+
+            val title = if (command.recipient.isNullOrBlank()) {
+                getString(R.string.message_reminder_title_generic)
+            } else {
+                getString(R.string.message_reminder_title_with_recipient, command.recipient)
+            }
+
+            return ParsedReminder(
+                title = title,
+                eventDateTime = triggerDateTime,
+                usedDefaultTime = command.explicitTime == null,
+                location = command.recipient,
+                durationMinutes = 15
+            )
+        }
+
+        if (!TireChangePolicy.isTireChangeRequest(rawText)) {
+            return null
+        }
+
+        val policy = TireChangePolicy.resolveOfficialDate(
+            now = LocalDate.now(),
+            requestedSeason = TireChangePolicy.detectSeason(rawText),
+            summerMonth = getTireSummerMonth(),
+            summerDay = getTireSummerDay(),
+            winterMonth = getTireWinterMonth(),
+            winterDay = getTireWinterDay()
+        )
+        val title = rawText.trim().ifBlank { getString(R.string.tire_default_title) }
+            .replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
+
+        return ParsedReminder(
+            title = title,
+            eventDateTime = LocalDateTime.of(policy.officialDate, getConfiguredDefaultReminderTime()),
+            usedDefaultTime = true,
+            location = null,
+            durationMinutes = 60
+        )
+    }
+
+    private fun maybeWarnEarlyFrostForTires(reminder: ParsedReminder) {
+        if (!TireChangePolicy.isTireChangeRequest(reminder.title)) {
+            return
+        }
+
+        val policy = TireChangePolicy.resolveOfficialDate(
+            now = LocalDate.now(),
+            requestedSeason = TireChangePolicy.detectSeason(reminder.title),
+            summerMonth = getTireSummerMonth(),
+            summerDay = getTireSummerDay(),
+            winterMonth = getTireWinterMonth(),
+            winterDay = getTireWinterDay()
+        )
+        val location = reminder.location?.trim().orEmpty().ifBlank { getWeatherFallbackCity() }
+        val timezoneId = ZoneId.systemDefault().id
+
+        Thread {
+            val client = OpenMeteoClient()
+            val point = client.geocode(location) ?: return@Thread
+            val forecast = client.loadTemperatureForecast(
+                latitude = point.latitude,
+                longitude = point.longitude,
+                timezoneId = timezoneId,
+                forecastDays = TIRE_FROST_CHECK_DAYS
+            ) ?: return@Thread
+
+            val hasEarlyFreeze = TireFreezeAdvisor.hasEarlyFreezeBeforeOfficialDate(
+                officialDate = policy.officialDate,
+                timezoneId = timezoneId,
+                hourlyEpochSeconds = forecast.hourlyEpochSeconds,
+                temperatureC = forecast.temperatureC,
+                freezeThresholdC = getTireFreezeThresholdC()
+            )
+
+            if (!hasEarlyFreeze) return@Thread
+
+            val suggestedDate = policy.officialDate.minusWeeks(1)
+            val warning = getString(
+                R.string.tire_early_frost_warning,
+                suggestedDate.format(DateTimeFormatter.ofPattern("dd.MM", Locale.getDefault()))
+            )
+
+            runOnUiThread {
+                Snackbar.make(findViewById(R.id.main), warning, Snackbar.LENGTH_LONG).show()
+            }
+        }.start()
+    }
+
+    private fun maybeRegisterStoreGeoReminder(eventId: Long, reminder: ParsedReminder) {
+        if (!isStoreRelatedReminder(reminder)) return
+
+        val placeName = resolveStorePlaceName(reminder) ?: return
+        val request = StoreGeoRequest(eventId = eventId, placeName = placeName)
+
+        if (!StoreGeofenceManager.hasRequiredLocationPermission(this)) {
+            pendingStoreGeoRequest = request
+            requestStoreGeoPermissions.launch(requiredStoreGeoPermissions())
+            return
+        }
+
+        registerStoreGeoReminder(request)
+    }
+
+    private fun registerStoreGeoReminder(request: StoreGeoRequest) {
+        Thread {
+            val client = OpenMeteoClient()
+            val point = client.geocode(request.placeName)
+
+            runOnUiThread {
+                if (point == null) {
+                    Toast.makeText(this, getString(R.string.store_geo_geocode_failed), Toast.LENGTH_LONG).show()
+                    return@runOnUiThread
+                }
+
+                runCatching {
+                    StoreGeofenceManager.registerStoreEnterGeofence(
+                        context = this,
+                        requestId = "store_geo_${request.eventId}",
+                        latitude = point.latitude,
+                        longitude = point.longitude,
+                        placeName = request.placeName
+                    )
+                }.onSuccess {
+                    Toast.makeText(this, getString(R.string.store_geo_armed, request.placeName), Toast.LENGTH_SHORT).show()
+                }.onFailure {
+                    Toast.makeText(this, getString(R.string.store_geo_register_failed), Toast.LENGTH_LONG).show()
+                }
+            }
+        }.start()
+    }
+
+    private fun requiredStoreGeoPermissions(): Array<String> {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+        } else {
+            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+    }
+
+    private fun isStoreRelatedReminder(reminder: ParsedReminder): Boolean {
+        return StoreGeoReminderMatcher.isStoreRelated(
+            title = reminder.title,
+            location = reminder.location
+        )
+    }
+
+    private fun resolveStorePlaceName(reminder: ParsedReminder): String? {
+        return StoreGeoReminderMatcher.resolvePlaceName(
+            title = reminder.title,
+            location = reminder.location,
+            fallbackCity = getWeatherFallbackCity()
+        )
+    }
+
+    private fun isLibraryReturnReminder(reminder: ParsedReminder): Boolean {
+        val source = "${reminder.title} ${reminder.location.orEmpty()}".lowercase(Locale.ROOT)
+        val libraryKeywords = listOf("библиот", "library", "kirjasto", "oodi", "helmet")
+        val returnKeywords = listOf("верну", "вернуть", "return", "palaut", "kirja")
+        return libraryKeywords.any { source.contains(it) } && returnKeywords.any { source.contains(it) }
+    }
+
+    private fun addLibraryReturnRemindersIfNeeded(eventId: Long, reminder: ParsedReminder) {
+        if (!isLibraryReturnReminder(reminder)) {
+            return
+        }
+
+        insertCalendarReminder(eventId, LIBRARY_REMINDER_TWO_DAYS_MINUTES)
+        insertCalendarReminder(eventId, LIBRARY_REMINDER_ONE_HOUR_MINUTES)
+    }
+
+    private fun insertCalendarReminder(eventId: Long, minutesBefore: Int) {
+        val values = ContentValues().apply {
+            put(CalendarContract.Reminders.EVENT_ID, eventId)
+            put(CalendarContract.Reminders.MINUTES, minutesBefore)
+            put(CalendarContract.Reminders.METHOD, CalendarContract.Reminders.METHOD_ALERT)
+        }
+        contentResolver.insert(CalendarContract.Reminders.CONTENT_URI, values)
+    }
+
+    private fun getWritableCalendarId(): Long? {
+        val projection = arrayOf(
+            CalendarContract.Calendars._ID,
+            CalendarContract.Calendars.VISIBLE
+        )
+
+        val selection = "${CalendarContract.Calendars.VISIBLE}=1"
+        contentResolver.query(
+            CalendarContract.Calendars.CONTENT_URI,
+            projection,
+            selection,
+            null,
+            null
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                return cursor.getLong(0)
+            }
+        }
+
+        return null
+    }
+
+    private fun startVoiceInput() {
+        isAwaitingVoiceDecision = false
+        pendingVoiceReminder = null
+
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_PROMPT, getString(R.string.voice_prompt))
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                putExtra(RecognizerIntent.EXTRA_ENABLE_LANGUAGE_DETECTION, true)
+                putExtra(RecognizerIntent.EXTRA_ENABLE_LANGUAGE_SWITCH, RecognizerIntent.LANGUAGE_SWITCH_BALANCED)
+            }
+        }
+
+        if (intent.resolveActivity(packageManager) != null) {
+            speechLauncher.launch(intent)
+        } else {
+            Toast.makeText(this, getString(R.string.voice_not_supported), Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun startPhotoCapture() {
+        takePhotoLauncher.launch(null)
+    }
+
+    private fun startPhotoPickFromGallery() {
+        pickPhotoLauncher.launch("image/*")
+    }
+
+    private fun showPhotoSourceDialog() {
+        val options = arrayOf(
+            getString(R.string.photo_source_camera),
+            getString(R.string.photo_source_gallery)
+        )
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.photo_source_title)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> startPhotoCapture()
+                    1 -> startPhotoPickFromGallery()
+                }
+            }
+            .show()
+    }
+
+    private fun processAnnouncementPhoto(bitmap: Bitmap) {
+        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        val image = InputImage.fromBitmap(bitmap, 0)
+
+        recognizer.process(image)
+            .addOnSuccessListener { result ->
+                handleOcrRecognizedText(result.text)
+            }
+            .addOnFailureListener {
+                Toast.makeText(this, getString(R.string.ocr_failed), Toast.LENGTH_LONG).show()
+            }
+            .addOnCompleteListener {
+                recognizer.close()
+            }
+    }
+
+    private fun processAnnouncementPhotoFromUri(uri: Uri) {
+        val image = runCatching { InputImage.fromFilePath(this, uri) }.getOrNull()
+        if (image == null) {
+            Toast.makeText(this, getString(R.string.ocr_failed), Toast.LENGTH_LONG).show()
+            return
+        }
+
+        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        recognizer.process(image)
+            .addOnSuccessListener { result ->
+                handleOcrRecognizedText(result.text)
+            }
+            .addOnFailureListener {
+                Toast.makeText(this, getString(R.string.ocr_failed), Toast.LENGTH_LONG).show()
+            }
+            .addOnCompleteListener {
+                recognizer.close()
+            }
+    }
+
+    private fun handleOcrRecognizedText(rawText: String) {
+        val text = rawText.trim()
+        if (text.isBlank()) {
+            Toast.makeText(this, getString(R.string.ocr_no_text), Toast.LENGTH_LONG).show()
+            return
+        }
+
+        reminderInput.setText(text)
+        updatePreview(text)
+
+        val parsed = parseReminderWithDomainFallback(text)
+        if (parsed == null) {
+            Toast.makeText(this, getString(R.string.ocr_parse_failed), Toast.LENGTH_LONG).show()
+            return
+        }
+
+        showConfirmationDialog(parsed)
+    }
+
+    private fun startVoiceDecisionInput() {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_PROMPT, getString(R.string.voice_confirmation_listen_prompt))
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                putExtra(RecognizerIntent.EXTRA_ENABLE_LANGUAGE_DETECTION, true)
+                putExtra(RecognizerIntent.EXTRA_ENABLE_LANGUAGE_SWITCH, RecognizerIntent.LANGUAGE_SWITCH_BALANCED)
+            }
+        }
+
+        if (intent.resolveActivity(packageManager) != null) {
+            speechLauncher.launch(intent)
+        } else {
+            isAwaitingVoiceDecision = false
+            Toast.makeText(this, getString(R.string.voice_not_supported), Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun askVoiceConfirmation(parsed: ParsedReminder) {
+        pendingVoiceReminder = parsed
+        isAwaitingVoiceDecision = true
+
+        val question = getString(
+            R.string.voice_confirmation_question,
+            parsed.title,
+            parsed.eventDateTime.toLocalTime().format(timeFormatter)
+        )
+
+        if (isNightSilentModeEnabled() && isQuietHoursNow()) {
+            vibrateQuietFeedback()
+            Toast.makeText(this, getString(R.string.night_mode_silent_confirmation), Toast.LENGTH_LONG).show()
+            startVoiceDecisionInput()
+            return
+        }
+
+        if (isTtsReady) {
+            tts?.speak(question, TextToSpeech.QUEUE_FLUSH, null, VOICE_CONFIRM_UTTERANCE_ID)
+        } else {
+            Toast.makeText(this, question, Toast.LENGTH_LONG).show()
+            startVoiceDecisionInput()
+        }
+    }
+
+    private fun isQuietHoursNow(): Boolean {
+        val nowHour = LocalTime.now().hour
+        return nowHour >= QUIET_HOURS_START || nowHour < QUIET_HOURS_END
+    }
+
+    private fun isNightSilentModeEnabled(): Boolean {
+        return getSettingsPrefs().getBoolean(NIGHT_SILENT_MODE_ENABLED, true)
+    }
+
+    private fun isEmojiCategoriesEnabled(): Boolean {
+        return getSettingsPrefs().getBoolean(EMOJI_CATEGORIES_ENABLED, true)
+    }
+
+    private fun setNightSilentModeEnabled(enabled: Boolean) {
+        getSettingsPrefs()
+            .edit()
+            .putBoolean(NIGHT_SILENT_MODE_ENABLED, enabled)
+            .apply()
+    }
+
+    private fun setEmojiCategoriesEnabled(enabled: Boolean) {
+        getSettingsPrefs()
+            .edit()
+            .putBoolean(EMOJI_CATEGORIES_ENABLED, enabled)
+            .apply()
+    }
+
+    private fun updateEmojiCategoriesStatusUi(isEnabled: Boolean) {
+        applyToggleStatusUi(
+            statusTextView = emojiCategoriesStatusText,
+            isEnabled = isEnabled,
+            onTextRes = R.string.emoji_categories_status_on,
+            offTextRes = R.string.emoji_categories_status_off,
+            animate = false
+        )
+    }
+
+    private fun updateNightSilentModeStatusUi(isEnabled: Boolean) {
+        applyToggleStatusUi(
+            statusTextView = nightSilentModeStatusText,
+            isEnabled = isEnabled,
+            onTextRes = R.string.night_mode_status_on,
+            offTextRes = R.string.night_mode_status_off,
+            animate = false
+        )
+    }
+
+    private fun vibrateQuietFeedback() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val manager = getSystemService(VibratorManager::class.java) ?: return
+            manager.defaultVibrator.vibrate(
+                VibrationEffect.createOneShot(QUIET_FEEDBACK_VIBRATION_MS, VibrationEffect.DEFAULT_AMPLITUDE)
+            )
+            return
+        }
+
+        @Suppress("DEPRECATION")
+        val vibrator = getSystemService(VIBRATOR_SERVICE) as? Vibrator ?: return
+        @Suppress("DEPRECATION")
+        vibrator.vibrate(QUIET_FEEDBACK_VIBRATION_MS)
+    }
+
+    private fun handleVoiceDecision(rawDecision: String) {
+        val decision = rawDecision.trim().lowercase(Locale.ROOT)
+
+        when {
+            isVoiceYes(decision) -> {
+                isAwaitingVoiceDecision = false
+                val reminder = pendingVoiceReminder
+                pendingVoiceReminder = null
+
+                if (reminder == null) {
+                    Toast.makeText(this, getString(R.string.voice_confirmation_failed), Toast.LENGTH_LONG).show()
+                    return
+                }
+
+                pendingReminder = reminder
+                updatePendingEditVisibility()
+                saveDraftToPrefs()
+                ensureCalendarPermissionAndSave()
+            }
+
+            isVoiceNo(decision) -> {
+                isAwaitingVoiceDecision = false
+                pendingVoiceReminder = null
+                Toast.makeText(this, getString(R.string.voice_confirmation_cancelled), Toast.LENGTH_SHORT).show()
+            }
+
+            else -> {
+                Toast.makeText(this, getString(R.string.voice_confirmation_retry), Toast.LENGTH_SHORT).show()
+                startVoiceDecisionInput()
+            }
+        }
+    }
+
+    private fun isVoiceYes(text: String): Boolean {
+        val yesWords = setOf("да", "yes", "yep", "yeah", "ok", "okay", "ага", "так", "kylla", "joo")
+        return yesWords.any { word -> text == word || text.startsWith("$word ") }
+    }
+
+    private fun isVoiceNo(text: String): Boolean {
+        val noWords = setOf("нет", "no", "nope", "ні", "ni", "ei")
+        return noWords.any { word -> text == word || text.startsWith("$word ") }
+    }
+
+    private fun initTextToSpeech() {
+        tts = TextToSpeech(this) { status ->
+            if (status != TextToSpeech.SUCCESS) {
+                isTtsReady = false
+                return@TextToSpeech
+            }
+
+            val result = tts?.setLanguage(Locale.getDefault())
+            isTtsReady = result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED
+            tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(utteranceId: String?) = Unit
+
+                override fun onDone(utteranceId: String?) {
+                    if (utteranceId != VOICE_CONFIRM_UTTERANCE_ID || !isAwaitingVoiceDecision) return
+                    runOnUiThread {
+                        if (isAwaitingVoiceDecision) {
+                            startVoiceDecisionInput()
+                        }
+                    }
+                }
+
+                override fun onError(utteranceId: String?) {
+                    if (utteranceId != VOICE_CONFIRM_UTTERANCE_ID || !isAwaitingVoiceDecision) return
+                    runOnUiThread {
+                        if (isAwaitingVoiceDecision) {
+                            startVoiceDecisionInput()
+                        }
+                    }
+                }
+            })
+        }
+    }
+
+    private fun openSystemEventForm(rawText: String) {
+        val eventTitle = rawText.ifBlank { getString(R.string.default_event_title) }
+        val intent = Intent(Intent.ACTION_INSERT).apply {
+            data = CalendarContract.Events.CONTENT_URI
+            putExtra(CalendarContract.Events.TITLE, eventTitle)
+            putExtra(CalendarContract.Events.DESCRIPTION, rawText)
+        }
+
+        if (intent.resolveActivity(packageManager) != null) {
+            startActivity(intent)
+            Toast.makeText(this, getString(R.string.calendar_form_opened), Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun showConfirmationDialog(parsed: ParsedReminder) {
+        val view = LayoutInflater.from(this).inflate(R.layout.dialog_confirm_reminder, null)
+
+        val titleLayout = view.findViewById<TextInputLayout>(R.id.confirmTitleLayout)
+        val dateLayout = view.findViewById<TextInputLayout>(R.id.confirmDateLayout)
+        val timeLayout = view.findViewById<TextInputLayout>(R.id.confirmTimeLayout)
+        val durationLayout = view.findViewById<TextInputLayout>(R.id.confirmDurationLayout)
+        val locationLayout = view.findViewById<TextInputLayout>(R.id.confirmLocationLayout)
+
+        val titleInput = view.findViewById<TextInputEditText>(R.id.confirmTitleInput)
+        val dateInput = view.findViewById<TextInputEditText>(R.id.confirmDateInput)
+        val timeInput = view.findViewById<TextInputEditText>(R.id.confirmTimeInput)
+        val durationInput = view.findViewById<TextInputEditText>(R.id.confirmDurationInput)
+        val locationInput = view.findViewById<TextInputEditText>(R.id.confirmLocationInput)
+
+        var selectedDate = parsed.eventDateTime.toLocalDate()
+        var selectedTime = parsed.eventDateTime.toLocalTime().withSecond(0).withNano(0)
+
+        titleInput.setText(parsed.title)
+        dateInput.setText(selectedDate.format(dateFormatter))
+        timeInput.setText(selectedTime.format(timeFormatter))
+        durationInput.setText(parsed.durationMinutes.toString())
+        locationInput.setText(parsed.location.orEmpty())
+
+        dateInput.setOnClickListener {
+            openDatePicker(selectedDate) { pickedDate ->
+                selectedDate = pickedDate
+                dateInput.setText(selectedDate.format(dateFormatter))
+                dateLayout.error = null
+            }
+        }
+
+        timeInput.setOnClickListener {
+            openTimePicker(selectedTime) { pickedTime ->
+                selectedTime = pickedTime
+                timeInput.setText(selectedTime.format(timeFormatter))
+                timeLayout.error = null
+            }
+        }
+
+        dateLayout.setEndIconOnClickListener {
+            dateInput.performClick()
+        }
+
+        timeLayout.setEndIconOnClickListener {
+            timeInput.performClick()
+        }
+
+        durationInput.doAfterTextChanged {
+            durationLayout.error = null
+        }
+
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.confirm_dialog_title)
+            .setView(view)
+            .setNegativeButton(R.string.confirm_dialog_cancel, null)
+            .setPositiveButton(R.string.confirm_dialog_save, null)
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                titleLayout.error = null
+                dateLayout.error = null
+                timeLayout.error = null
+                durationLayout.error = null
+                locationLayout.error = null
+
+                val title = titleInput.text?.toString()?.trim().orEmpty().ifBlank {
+                    getString(R.string.default_event_title)
+                }
+
+                val duration = durationInput.text?.toString()?.trim()?.toIntOrNull()
+                val location = locationInput.text?.toString()?.trim().orEmpty().ifBlank { null }
+
+                var hasError = false
+                if (duration == null || duration !in 1..1440) {
+                    durationLayout.error = getString(R.string.confirm_duration_error)
+                    hasError = true
+                }
+
+                if (hasError) {
+                    return@setOnClickListener
+                }
+
+                pendingReminder = parsed.copy(
+                    title = title,
+                    eventDateTime = LocalDateTime.of(selectedDate, selectedTime),
+                    usedDefaultTime = false,
+                    location = location,
+                    durationMinutes = duration!!
+                )
+
+                dialog.dismiss()
+                updatePendingEditVisibility()
+                saveDraftToPrefs()
+                showSaveSnackbar()
+            }
+        }
+
+        dialog.show()
+    }
+
+    private fun openDatePicker(initialDate: LocalDate, onPicked: (LocalDate) -> Unit) {
+        val todayStartMillis = LocalDate.now()
+            .atStartOfDay(ZoneId.systemDefault())
+            .toInstant()
+            .toEpochMilli()
+        val initialSelection = initialDate
+            .atStartOfDay(ZoneId.systemDefault())
+            .toInstant()
+            .toEpochMilli()
+        val constraints = CalendarConstraints.Builder()
+            .setValidator(DateValidatorPointForward.from(todayStartMillis))
+            .build()
+
+        val picker = MaterialDatePicker.Builder.datePicker()
+            .setCalendarConstraints(constraints)
+            .setSelection(initialSelection)
+            .build()
+
+        picker.addOnPositiveButtonClickListener { selectedMillis ->
+            val date = Instant.ofEpochMilli(selectedMillis)
+                .atZone(ZoneId.systemDefault())
+                .toLocalDate()
+            onPicked(date)
+        }
+
+        picker.show(supportFragmentManager, "confirm_date_picker")
+    }
+
+    private fun openDatePickerUnrestricted(
+        initialDate: LocalDate,
+        tag: String,
+        onPicked: (LocalDate) -> Unit
+    ) {
+        val initialSelection = initialDate
+            .atStartOfDay(ZoneId.systemDefault())
+            .toInstant()
+            .toEpochMilli()
+
+        val picker = MaterialDatePicker.Builder.datePicker()
+            .setSelection(initialSelection)
+            .build()
+
+        picker.addOnPositiveButtonClickListener { selectedMillis ->
+            val date = Instant.ofEpochMilli(selectedMillis)
+                .atZone(ZoneId.systemDefault())
+                .toLocalDate()
+            onPicked(date)
+        }
+
+        picker.show(supportFragmentManager, tag)
+    }
+
+    private fun openTimePicker(initialTime: LocalTime, onPicked: (LocalTime) -> Unit) {
+        val timeFormat = if (DateFormat.is24HourFormat(this)) TimeFormat.CLOCK_24H else TimeFormat.CLOCK_12H
+        val picker = MaterialTimePicker.Builder()
+            .setHour(initialTime.hour)
+            .setMinute(initialTime.minute)
+            .setTimeFormat(timeFormat)
+            .build()
+
+        picker.addOnPositiveButtonClickListener {
+            onPicked(LocalTime.of(picker.hour, picker.minute))
+        }
+
+        picker.show(supportFragmentManager, "confirm_time_picker")
+    }
+
+    private fun showSaveSnackbar() {
+        val reminder = pendingReminder ?: return
+        val summary = getString(
+            R.string.save_snackbar_summary,
+            reminder.eventDateTime.format(dateFormatter),
+            reminder.eventDateTime.format(timeFormatter),
+            reminder.location ?: getString(R.string.location_not_specified),
+            reminder.durationMinutes
+        )
+
+        Snackbar.make(findViewById(R.id.main), summary, Snackbar.LENGTH_LONG)
+            .setAction(R.string.save_snackbar_action) {
+                ensureCalendarPermissionAndSave()
+            }
+            .show()
+    }
+
+    private fun updatePendingEditVisibility() {
+        pendingActionsRow.visibility = if (pendingReminder != null) View.VISIBLE else View.GONE
+    }
+
+    private fun restoreState(savedState: Bundle?) {
+        if (savedState == null) {
+            updatePendingEditVisibility()
+            return
+        }
+
+        val restoredInput = savedState.getString(STATE_INPUT_TEXT).orEmpty()
+        if (restoredInput.isNotBlank()) {
+            reminderInput.setText(restoredInput)
+            updatePreview(restoredInput)
+        }
+
+        val pendingDateTime = savedState.getString(STATE_PENDING_DATETIME)?.let {
+            runCatching { LocalDateTime.parse(it) }.getOrNull()
+        }
+        val pendingTitle = savedState.getString(STATE_PENDING_TITLE)
+        val pendingDuration = savedState.getInt(STATE_PENDING_DURATION, 0)
+
+        pendingReminder = if (pendingDateTime != null && !pendingTitle.isNullOrBlank() && pendingDuration > 0) {
+            ParsedReminder(
+                title = pendingTitle,
+                eventDateTime = pendingDateTime,
+                usedDefaultTime = savedState.getBoolean(STATE_PENDING_USED_DEFAULT_TIME, false),
+                location = savedState.getString(STATE_PENDING_LOCATION),
+                durationMinutes = pendingDuration
+            )
+        } else {
+            null
+        }
+
+        updatePendingEditVisibility()
+    }
+
+    private fun saveDraftToPrefs() {
+        val prefs = getSharedPreferences(DRAFT_PREFS, MODE_PRIVATE)
+        prefs.edit().apply {
+            putString(DRAFT_INPUT_TEXT, reminderInput.text?.toString().orEmpty())
+
+            val reminder = pendingReminder
+            if (reminder == null) {
+                remove(DRAFT_PENDING_TITLE)
+                remove(DRAFT_PENDING_DATETIME)
+                remove(DRAFT_PENDING_USED_DEFAULT_TIME)
+                remove(DRAFT_PENDING_LOCATION)
+                remove(DRAFT_PENDING_DURATION)
+            } else {
+                putString(DRAFT_PENDING_TITLE, reminder.title)
+                putString(DRAFT_PENDING_DATETIME, reminder.eventDateTime.toString())
+                putBoolean(DRAFT_PENDING_USED_DEFAULT_TIME, reminder.usedDefaultTime)
+                putString(DRAFT_PENDING_LOCATION, reminder.location)
+                putInt(DRAFT_PENDING_DURATION, reminder.durationMinutes)
+            }
+        }.apply()
+    }
+
+    private fun restoreDraftFromPrefs(): Boolean {
+        var restoredAny = false
+        val prefs = getSharedPreferences(DRAFT_PREFS, MODE_PRIVATE)
+
+        val draftInput = prefs.getString(DRAFT_INPUT_TEXT, "").orEmpty()
+        if (draftInput.isNotBlank() && reminderInput.text.isNullOrBlank()) {
+            reminderInput.setText(draftInput)
+            updatePreview(draftInput)
+            restoredAny = true
+        }
+
+        val pendingDateTime = prefs.getString(DRAFT_PENDING_DATETIME, null)?.let {
+            runCatching { LocalDateTime.parse(it) }.getOrNull()
+        }
+        val pendingTitle = prefs.getString(DRAFT_PENDING_TITLE, null)
+        val pendingDuration = prefs.getInt(DRAFT_PENDING_DURATION, 0)
+
+        if (pendingReminder == null && pendingDateTime != null && !pendingTitle.isNullOrBlank() && pendingDuration > 0) {
+            pendingReminder = ParsedReminder(
+                title = pendingTitle,
+                eventDateTime = pendingDateTime,
+                usedDefaultTime = prefs.getBoolean(DRAFT_PENDING_USED_DEFAULT_TIME, false),
+                location = prefs.getString(DRAFT_PENDING_LOCATION, null),
+                durationMinutes = pendingDuration
+            )
+            restoredAny = true
+        }
+
+        updatePendingEditVisibility()
+        return restoredAny
+    }
+
+    private fun clearDraftFromPrefs() {
+        getSharedPreferences(DRAFT_PREFS, MODE_PRIVATE)
+            .edit()
+            .clear()
+            .apply()
+    }
+
+    private fun requestPermissionsOnFirstLaunchIfNeeded() {
+        val prefs = getSharedPreferences(FIRST_LAUNCH_PREFS, MODE_PRIVATE)
+        if (prefs.getBoolean(FIRST_LAUNCH_PERMISSIONS_REQUESTED, false)) {
+            return
+        }
+
+        val missingPermissions = buildList {
+            if (!hasPermission(Manifest.permission.READ_CALENDAR)) add(Manifest.permission.READ_CALENDAR)
+            if (!hasPermission(Manifest.permission.WRITE_CALENDAR)) add(Manifest.permission.WRITE_CALENDAR)
+            if (!hasPermission(Manifest.permission.RECORD_AUDIO)) add(Manifest.permission.RECORD_AUDIO)
+        }
+
+        if (missingPermissions.isNotEmpty()) {
+            showPrePermissionDialog(missingPermissions.toTypedArray())
+        } else {
+            prefs.edit().putBoolean(FIRST_LAUNCH_PERMISSIONS_REQUESTED, true).apply()
+        }
+    }
+
+    private fun showPrePermissionDialog(missingPermissions: Array<String>) {
+        val prefs = getSharedPreferences(FIRST_LAUNCH_PREFS, MODE_PRIVATE)
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.permissions_intro_title)
+            .setMessage(R.string.permissions_intro_message)
+            .setNegativeButton(R.string.permissions_intro_later) { _, _ ->
+                prefs.edit()
+                    .putBoolean(FIRST_LAUNCH_PERMISSIONS_REQUESTED, true)
+                    .putBoolean(FIRST_LAUNCH_PERMISSIONS_DEFERRED, true)
+                    .apply()
+            }
+            .setPositiveButton(R.string.permissions_intro_continue) { _, _ ->
+                prefs.edit()
+                    .putBoolean(FIRST_LAUNCH_PERMISSIONS_REQUESTED, true)
+                    .putBoolean(FIRST_LAUNCH_PERMISSIONS_DEFERRED, false)
+                    .apply()
+                requestInitialPermissions.launch(missingPermissions)
+            }
+            .show()
+    }
+
+    private fun maybeShowDeferredPermissionReminderForVoice(): Boolean {
+        if (hasPermission(Manifest.permission.RECORD_AUDIO)) return false
+        if (!shouldShowDeferredPermissionReminder()) return false
+
+        markDeferredReminderAsShown()
+        showDeferredPermissionReminderDialog(
+            title = getString(R.string.permissions_reminder_voice_title),
+            message = getString(R.string.permissions_reminder_voice_message),
+            permissions = arrayOf(Manifest.permission.RECORD_AUDIO)
+        )
+        return true
+    }
+
+    private fun maybeShowDeferredPermissionReminderForCalendar(): Boolean {
+        val missingCalendar = buildList {
+            if (!hasPermission(Manifest.permission.READ_CALENDAR)) add(Manifest.permission.READ_CALENDAR)
+            if (!hasPermission(Manifest.permission.WRITE_CALENDAR)) add(Manifest.permission.WRITE_CALENDAR)
+        }
+        if (missingCalendar.isEmpty()) return false
+        if (!shouldShowDeferredPermissionReminder()) return false
+
+        markDeferredReminderAsShown()
+        showDeferredPermissionReminderDialog(
+            title = getString(R.string.permissions_reminder_calendar_title),
+            message = getString(R.string.permissions_reminder_calendar_message),
+            permissions = missingCalendar.toTypedArray()
+        )
+        return true
+    }
+
+    private fun showDeferredPermissionReminderDialog(title: String, message: String, permissions: Array<String>) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(title)
+            .setMessage(message)
+            .setNegativeButton(R.string.permissions_reminder_later, null)
+            .setPositiveButton(R.string.permissions_reminder_continue) { _, _ ->
+                requestInitialPermissions.launch(permissions)
+            }
+            .show()
+    }
+
+    private fun shouldShowDeferredPermissionReminder(): Boolean {
+        val prefs = getSharedPreferences(FIRST_LAUNCH_PREFS, MODE_PRIVATE)
+        val deferred = prefs.getBoolean(FIRST_LAUNCH_PERMISSIONS_DEFERRED, false)
+        val shown = prefs.getBoolean(FIRST_LAUNCH_GENTLE_REMINDER_SHOWN, false)
+        return deferred && !shown
+    }
+
+    private fun markDeferredReminderAsShown() {
+        getSharedPreferences(FIRST_LAUNCH_PREFS, MODE_PRIVATE)
+            .edit()
+            .putBoolean(FIRST_LAUNCH_GENTLE_REMINDER_SHOWN, true)
+            .putBoolean(FIRST_LAUNCH_PERMISSIONS_DEFERRED, false)
+            .apply()
+    }
+
+    private fun hasPermission(permission: String): Boolean {
+        return ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun isPermissionPermanentlyDenied(permission: String): Boolean {
+        if (hasPermission(permission)) return false
+        return !ActivityCompat.shouldShowRequestPermissionRationale(this, permission)
+    }
+
+    private fun permissionDeniedMessageRes(type: PermissionDeniedMessageType): Int {
+        return when (type) {
+            PermissionDeniedMessageType.MICROPHONE_TEMPORARY -> R.string.permissions_denied_microphone_settings_hint
+            PermissionDeniedMessageType.CALENDAR_TEMPORARY -> R.string.permissions_denied_calendar_settings_hint
+            PermissionDeniedMessageType.BOTH_TEMPORARY -> R.string.permissions_denied_both_settings_hint
+            PermissionDeniedMessageType.MICROPHONE_PERMANENT -> R.string.permissions_denied_microphone_permanent_settings_hint
+            PermissionDeniedMessageType.CALENDAR_PERMANENT -> R.string.permissions_denied_calendar_permanent_settings_hint
+            PermissionDeniedMessageType.BOTH_PERMANENT -> R.string.permissions_denied_both_permanent_settings_hint
+        }
+    }
+
+    private fun showPermissionDeniedFeedback(
+        messageRes: Int,
+        isPermanentDenial: Boolean,
+        retryType: PermissionRetryType?,
+        retryPermissions: Array<String>?
+    ) {
+        if (isPermanentDenial) {
+            showPermanentPermissionDeniedDialog(messageRes)
+        } else {
+            showPermissionRetrySnackbar(messageRes, retryType, retryPermissions)
+        }
+    }
+
+    private fun showPermissionRetrySnackbar(
+        messageRes: Int,
+        retryType: PermissionRetryType?,
+        retryPermissions: Array<String>?
+    ) {
+        val snackbar = Snackbar.make(findViewById(R.id.main), getString(messageRes), Snackbar.LENGTH_LONG)
+        if (retryType != null) {
+            snackbar.setAction(R.string.permissions_retry_action) {
+                when (retryType) {
+                    PermissionRetryType.CALENDAR -> {
+                        requestCalendarPermissions.launch(
+                            arrayOf(
+                                Manifest.permission.READ_CALENDAR,
+                                Manifest.permission.WRITE_CALENDAR
+                            )
+                        )
+                    }
+
+                    PermissionRetryType.INITIAL -> {
+                        if (!retryPermissions.isNullOrEmpty()) {
+                            requestInitialPermissions.launch(retryPermissions)
+                        }
+                    }
+                }
+            }
+        }
+        snackbar.show()
+    }
+
+    private fun showPermanentPermissionDeniedDialog(messageRes: Int) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.permissions_permanent_dialog_title)
+            .setMessage(getString(messageRes))
+            .setNegativeButton(R.string.permissions_permanent_dialog_cancel, null)
+            .setPositiveButton(R.string.open_settings_action) { _, _ ->
+                openAppSettings()
+            }
+            .show()
+    }
+
+    private fun showPermissionPurposeDialog(titleRes: Int, messageRes: Int) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(titleRes)
+            .setMessage(messageRes)
+            .setPositiveButton(R.string.permissions_info_dialog_ok, null)
+            .show()
+    }
+
+    private fun requestMicrophonePermissionFromStatus() {
+        if (hasPermission(Manifest.permission.RECORD_AUDIO)) {
+            Toast.makeText(this, getString(R.string.permission_already_granted), Toast.LENGTH_SHORT).show()
+            return
+        }
+        requestInitialPermissions.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
+    }
+
+    private fun requestCalendarPermissionsFromStatus() {
+        if (hasPermission(Manifest.permission.READ_CALENDAR) && hasPermission(Manifest.permission.WRITE_CALENDAR)) {
+            Toast.makeText(this, getString(R.string.permission_already_granted), Toast.LENGTH_SHORT).show()
+            return
+        }
+        requestCalendarPermissions.launch(
+            arrayOf(
+                Manifest.permission.READ_CALENDAR,
+                Manifest.permission.WRITE_CALENDAR
+            )
+        )
+    }
+
+    private fun openAppSettings() {
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.fromParts("package", packageName, null)
+        }
+        startActivity(intent)
+    }
+
+    private fun getWeatherFallbackCity(): String {
+        val prefs = getSharedPreferences(WEATHER_PREFS, MODE_PRIVATE)
+        return prefs.getString(WEATHER_FALLBACK_CITY, getString(R.string.weather_default_location)).orEmpty()
+            .trim()
+            .ifBlank { getString(R.string.weather_default_location) }
+    }
+
+    private fun setWeatherFallbackCity(city: String) {
+        getSharedPreferences(WEATHER_PREFS, MODE_PRIVATE)
+            .edit()
+            .putString(WEATHER_FALLBACK_CITY, city)
+            .apply()
+    }
+
+    private fun updateWeatherFallbackCityUi() {
+        weatherFallbackCityText.text = getString(R.string.weather_fallback_city_value, getWeatherFallbackCity())
+    }
+
+    private fun showWeatherFallbackCityDialog() {
+        val input = EditText(this).apply {
+            setText(getWeatherFallbackCity())
+            setSelection(text?.length ?: 0)
+        }
+
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.weather_fallback_city_title)
+            .setView(input)
+            .setNegativeButton(R.string.confirm_dialog_cancel, null)
+            .setPositiveButton(R.string.confirm_dialog_save, null)
+            .create()
+
+        input.doAfterTextChanged {
+            input.error = null
+        }
+
+        dialog.setOnShowListener {
+            dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val city = input.text?.toString().orEmpty().trim()
+                if (city.length < 2) {
+                    input.error = getString(R.string.weather_fallback_city_error)
+                    return@setOnClickListener
+                }
+
+                setWeatherFallbackCity(CityNameNormalizer.normalize(city))
+                updateWeatherFallbackCityUi()
+                dialog.dismiss()
+            }
+        }
+
+        dialog.show()
+    }
+
+    private fun createReminderParser(): ReminderParser {
+        return ReminderParser(
+            defaultTimeProvider = { getConfiguredDefaultReminderTime() },
+            defaultEventTitleProvider = { getString(R.string.default_event_title) }
+        )
+    }
+
+    private fun getSettingsPrefs() = getSharedPreferences(APP_SETTINGS_PREFS, MODE_PRIVATE)
+
+    private fun updateTireSettingsUi() {
+        tireFreezeThresholdText.text = getString(
+            R.string.tire_settings_threshold_value,
+            getTireFreezeThresholdC().toInt().toString()
+        )
+
+        val summerDate = formatDayMonth(getTireSummerDay(), getTireSummerMonth())
+        val winterDate = formatDayMonth(getTireWinterDay(), getTireWinterMonth())
+        tirePolicyText.text = getString(R.string.tire_settings_policy_value, summerDate, winterDate)
+    }
+
+    private fun showTireFreezeThresholdDialog() {
+        val values = doubleArrayOf(0.0, -2.0)
+        val labels = arrayOf(
+            getString(R.string.tire_settings_threshold_option_zero),
+            getString(R.string.tire_settings_threshold_option_minus_two)
+        )
+        var selected = if (getTireFreezeThresholdC() <= -2.0) 1 else 0
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.tire_settings_threshold_dialog_title)
+            .setSingleChoiceItems(labels, selected) { _, which ->
+                selected = which
+            }
+            .setNegativeButton(R.string.confirm_dialog_cancel, null)
+            .setPositiveButton(R.string.confirm_dialog_save) { _, _ ->
+                setTireFreezeThresholdC(values[selected])
+                updateTireSettingsUi()
+            }
+            .show()
+    }
+
+    private fun showTirePolicyDatesDialog() {
+        var summerDate = runCatching {
+            LocalDate.of(LocalDate.now().year, getTireSummerMonth(), getTireSummerDay())
+        }.getOrElse {
+            LocalDate.of(LocalDate.now().year, TireChangePolicy.DEFAULT_SUMMER_MONTH, TireChangePolicy.DEFAULT_SUMMER_DAY)
+        }
+        var winterDate = runCatching {
+            LocalDate.of(LocalDate.now().year, getTireWinterMonth(), getTireWinterDay())
+        }.getOrElse {
+            LocalDate.of(LocalDate.now().year, TireChangePolicy.DEFAULT_WINTER_MONTH, TireChangePolicy.DEFAULT_WINTER_DAY)
+        }
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val padding = (16 * resources.displayMetrics.density).toInt()
+            setPadding(padding, padding, padding, padding)
+        }
+
+        val summerInput = createPolicyDateInput(
+            hintRes = R.string.tire_settings_policy_summer_hint,
+            initialDate = summerDate,
+            pickerTag = "tire_policy_summer_picker"
+        ) { picked ->
+            summerDate = picked
+        }
+
+        val winterInput = createPolicyDateInput(
+            hintRes = R.string.tire_settings_policy_winter_hint,
+            initialDate = winterDate,
+            pickerTag = "tire_policy_winter_picker"
+        ) { picked ->
+            winterDate = picked
+        }
+
+        container.addView(summerInput)
+        container.addView(winterInput)
+
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.tire_settings_policy_dialog_title)
+            .setView(container)
+            .setNegativeButton(R.string.confirm_dialog_cancel, null)
+            .setPositiveButton(R.string.confirm_dialog_save, null)
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                setTirePolicyDates(
+                    summerDay = summerDate.dayOfMonth,
+                    summerMonth = summerDate.monthValue,
+                    winterDay = winterDate.dayOfMonth,
+                    winterMonth = winterDate.monthValue
+                )
+                updateTireSettingsUi()
+                dialog.dismiss()
+            }
+        }
+
+        dialog.show()
+    }
+
+    private fun getTireFreezeThresholdC(): Double {
+        return getSettingsPrefs().getFloat(TIRE_FREEZE_THRESHOLD_C, 0f).toDouble()
+    }
+
+    private fun setTireFreezeThresholdC(value: Double) {
+        getSettingsPrefs().edit().putFloat(TIRE_FREEZE_THRESHOLD_C, value.toFloat()).apply()
+    }
+
+    private fun getTireSummerDay(): Int {
+        return getSettingsPrefs().getInt(TIRE_SUMMER_DAY, TireChangePolicy.DEFAULT_SUMMER_DAY)
+    }
+
+    private fun getTireSummerMonth(): Int {
+        return getSettingsPrefs().getInt(TIRE_SUMMER_MONTH, TireChangePolicy.DEFAULT_SUMMER_MONTH)
+    }
+
+    private fun getTireWinterDay(): Int {
+        return getSettingsPrefs().getInt(TIRE_WINTER_DAY, TireChangePolicy.DEFAULT_WINTER_DAY)
+    }
+
+    private fun getTireWinterMonth(): Int {
+        return getSettingsPrefs().getInt(TIRE_WINTER_MONTH, TireChangePolicy.DEFAULT_WINTER_MONTH)
+    }
+
+    private fun createPolicyDateInput(
+        hintRes: Int,
+        initialDate: LocalDate,
+        pickerTag: String,
+        onDateChanged: (LocalDate) -> Unit
+    ): EditText {
+        var selectedDate = initialDate
+        return EditText(this).apply {
+            hint = getString(hintRes)
+            isFocusable = false
+            isClickable = true
+            setText(formatDayMonth(selectedDate.dayOfMonth, selectedDate.monthValue))
+            setOnClickListener {
+                openDatePickerUnrestricted(selectedDate, pickerTag) { picked ->
+                    selectedDate = picked
+                    setText(formatDayMonth(selectedDate.dayOfMonth, selectedDate.monthValue))
+                    onDateChanged(picked)
+                }
+            }
+        }
+    }
+
+    private fun setTirePolicyDates(
+        summerDay: Int,
+        summerMonth: Int,
+        winterDay: Int,
+        winterMonth: Int
+    ) {
+        getSettingsPrefs().edit()
+            .putInt(TIRE_SUMMER_DAY, summerDay)
+            .putInt(TIRE_SUMMER_MONTH, summerMonth)
+            .putInt(TIRE_WINTER_DAY, winterDay)
+            .putInt(TIRE_WINTER_MONTH, winterMonth)
+            .apply()
+    }
+
+
+    private fun formatDayMonth(day: Int, month: Int): String {
+        return String.format(Locale.getDefault(), "%02d.%02d", day, month)
+    }
+
+    private fun isHandsFreeVoiceConfirmationEnabled(): Boolean {
+        return getSettingsPrefs().getBoolean(HANDS_FREE_VOICE_CONFIRMATION_ENABLED, true)
+    }
+
+    private fun setHandsFreeVoiceConfirmationEnabled(enabled: Boolean) {
+        getSettingsPrefs()
+            .edit()
+            .putBoolean(HANDS_FREE_VOICE_CONFIRMATION_ENABLED, enabled)
+            .apply()
+    }
+
+    private fun updateHandsFreeVoiceStatusUi(isEnabled: Boolean) {
+        applyToggleStatusUi(
+            statusTextView = handsFreeVoiceStatusText,
+            isEnabled = isEnabled,
+            onTextRes = R.string.hands_free_voice_status_on,
+            offTextRes = R.string.hands_free_voice_status_off,
+            animate = true
+        )
+    }
+
+    private fun applyToggleStatusUi(
+        statusTextView: TextView,
+        isEnabled: Boolean,
+        onTextRes: Int,
+        offTextRes: Int,
+        animate: Boolean
+    ) {
+        statusTextView.text = if (isEnabled) getString(onTextRes) else getString(offTextRes)
+
+        val statusIcon = if (isEnabled) R.drawable.ic_status_on_18 else R.drawable.ic_status_off_18
+        statusTextView.setCompoundDrawablesRelativeWithIntrinsicBounds(statusIcon, 0, 0, 0)
+
+        val statusColor = if (isEnabled) {
+            ContextCompat.getColor(this, R.color.permission_status_granted)
+        } else {
+            ContextCompat.getColor(this, R.color.status_neutral)
+        }
+        statusTextView.setTextColor(statusColor)
+
+        if (animate) {
+            statusTextView.alpha = 0.7f
+            statusTextView.animate()
+                .alpha(1f)
+                .setDuration(180)
+                .start()
+        }
+    }
+
+
+    private fun getConfiguredDefaultReminderTime(): LocalTime {
+        val raw = getSettingsPrefs().getString(DEFAULT_REMINDER_TIME, LocalTime.of(9, 0).toString())
+        return runCatching { LocalTime.parse(raw) }.getOrDefault(LocalTime.of(9, 0))
+    }
+
+    private fun setConfiguredDefaultReminderTime(time: LocalTime) {
+        getSettingsPrefs()
+            .edit()
+            .putString(DEFAULT_REMINDER_TIME, time.withSecond(0).withNano(0).toString())
+            .apply()
+    }
+
+    private fun updateDefaultReminderTimeUi() {
+        val value = getConfiguredDefaultReminderTime().format(timeFormatter)
+        defaultReminderTimeText.text = getString(R.string.default_reminder_time_value, value)
+    }
+
+    private fun showDefaultReminderTimeDialog() {
+        openTimePicker(getConfiguredDefaultReminderTime()) { pickedTime ->
+            setConfiguredDefaultReminderTime(pickedTime)
+            parser = createReminderParser()
+            updateDefaultReminderTimeUi()
+
+            val currentText = reminderInput.text?.toString().orEmpty()
+            if (currentText.isNotBlank()) {
+                updatePreview(currentText)
+            }
+        }
+    }
+
+    private fun showDirectionsAction(reminder: ParsedReminder) {
+        val location = reminder.location?.trim()?.replace(" ", "+").orEmpty()
+        if (location.isBlank()) {
+            return
+        }
+
+        Snackbar.make(
+            findViewById(R.id.main),
+            getString(R.string.route_snackbar_prompt, location),
+            Snackbar.LENGTH_LONG
+        )
+            .setAction(R.string.route_action) {
+                openDirections(location, reminder.eventDateTime)
+            }
+            .show()
+    }
+
+    private fun openDirections(destination: String, arrivalDateTime: LocalDateTime) {
+        val normalizedDestination = destination.trim()
+        if (normalizedDestination.isBlank()) {
+            Toast.makeText(this, getString(R.string.route_location_missing), Toast.LENGTH_LONG).show()
+            return
+        }
+
+        val routeLinks = RouteLinkBuilder.build(
+            destination = normalizedDestination,
+            arrivalDateTime = arrivalDateTime,
+            zoneId = ZoneId.systemDefault()
+        )
+
+        val hslAppIntent = Intent(Intent.ACTION_VIEW, Uri.parse(routeLinks.hslAppUrl)).apply {
+            setPackage(HSL_PACKAGE)
+        }
+        val hslWebIntent = Intent(Intent.ACTION_VIEW, Uri.parse(routeLinks.hslWebUrl))
+
+        if (startIfResolvable(hslAppIntent) || startIfResolvable(hslWebIntent)) {
+            return
+        }
+
+        val mapsAppIntent = Intent(Intent.ACTION_VIEW, Uri.parse(routeLinks.googleMapsUrl)).apply {
+            setPackage(GOOGLE_MAPS_PACKAGE)
+        }
+        val mapsAnyIntent = Intent(Intent.ACTION_VIEW, Uri.parse(routeLinks.googleMapsUrl))
+
+        if (!startIfResolvable(mapsAppIntent) && !startIfResolvable(mapsAnyIntent)) {
+            Toast.makeText(this, getString(R.string.route_no_app_found), Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun startIfResolvable(intent: Intent): Boolean {
+        val resolved = intent.resolveActivity(packageManager) != null
+        if (!resolved) return false
+
+        startActivity(intent)
+        return true
+    }
+
+
+    private fun updatePermissionsStatusUi() {
+        val microphoneGranted = hasPermission(Manifest.permission.RECORD_AUDIO)
+        val calendarGranted = hasPermission(Manifest.permission.READ_CALENDAR) &&
+            hasPermission(Manifest.permission.WRITE_CALENDAR)
+
+        val microphoneStatus = if (microphoneGranted) {
+            getString(R.string.permissions_status_granted_marked)
+        } else {
+            getString(R.string.permissions_status_denied_marked)
+        }
+
+        val calendarStatus = if (calendarGranted) {
+            getString(R.string.permissions_status_granted_marked)
+        } else {
+            getString(R.string.permissions_status_denied_marked)
+        }
+
+        val grantedColor = ContextCompat.getColor(this, R.color.permission_status_granted)
+        val deniedColor = ContextCompat.getColor(this, R.color.permission_status_denied)
+
+        permissionsMicStatusText.text = getString(R.string.permissions_status_microphone_template, microphoneStatus)
+        permissionsCalendarStatusText.text = getString(R.string.permissions_status_calendar_template, calendarStatus)
+        permissionsMicStatusText.setTextColor(if (microphoneGranted) grantedColor else deniedColor)
+        permissionsCalendarStatusText.setTextColor(if (calendarGranted) grantedColor else deniedColor)
+    }
+
+    private fun showDraftRestoredSnackbar() {
+        val reminder = pendingReminder
+        val snackbar = Snackbar.make(findViewById(R.id.main), getString(R.string.draft_restored_message), Snackbar.LENGTH_LONG)
+
+        if (reminder != null) {
+            snackbar.setAction(R.string.draft_restored_edit_action) {
+                showConfirmationDialog(reminder)
+            }
+        } else {
+            snackbar.setAction(R.string.draft_restored_clear_action) {
+                clearDraftUiState()
+            }
+        }
+
+        snackbar.show()
+    }
+
+    private fun clearDraftUiState() {
+        lastClearedDraftSnapshot = DraftSnapshot(
+            inputText = reminderInput.text?.toString().orEmpty(),
+            pendingReminder = pendingReminder
+        )
+
+        reminderInput.text?.clear()
+        pendingReminder = null
+        parsedPreview.text = getString(R.string.preview_empty)
+        previewRouteButton.isEnabled = false
+        updatePendingEditVisibility()
+        clearDraftFromPrefs()
+
+        if (lastClearedDraftSnapshot?.hasContent() == true) {
+            showDraftClearedUndoSnackbar()
+        }
+    }
+
+    private fun showClearDraftConfirmDialog() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.clear_draft_confirm_title)
+            .setMessage(R.string.clear_draft_confirm_message)
+            .setNegativeButton(R.string.clear_draft_confirm_cancel, null)
+            .setPositiveButton(R.string.clear_draft_confirm_action) { _, _ ->
+                clearDraftUiState()
+            }
+            .show()
+    }
+
+    private fun showDraftClearedUndoSnackbar() {
+        Snackbar.make(findViewById(R.id.main), getString(R.string.draft_cleared_message), Snackbar.LENGTH_LONG)
+            .setAction(R.string.draft_cleared_undo_action) {
+                restoreLastClearedDraft()
+            }
+            .show()
+    }
+
+    private fun restoreLastClearedDraft() {
+        val snapshot = lastClearedDraftSnapshot ?: return
+
+        reminderInput.setText(snapshot.inputText)
+        pendingReminder = snapshot.pendingReminder
+
+        if (snapshot.inputText.isNotBlank()) {
+            updatePreview(snapshot.inputText)
+        } else {
+            parsedPreview.text = getString(R.string.preview_empty)
+        }
+
+        updatePendingEditVisibility()
+        saveDraftToPrefs()
+        lastClearedDraftSnapshot = null
+    }
+}
+
+private data class DraftSnapshot(
+    val inputText: String,
+    val pendingReminder: ParsedReminder?
+) {
+    fun hasContent(): Boolean = inputText.isNotBlank() || pendingReminder != null
+}
+
+private data class StoreGeoRequest(
+    val eventId: Long,
+    val placeName: String
+)
