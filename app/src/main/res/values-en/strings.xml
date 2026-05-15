@@ -201,6 +201,14 @@
     <string name="waste_notification_body">Tomorrow they collect %1$s. Do not forget to roll the bin to the road.</string>
     <string name="waste_scheduled">Roska-Paiva enabled: %1$s on %2$s, every %3$d week(s).</string>
     <string name="waste_preview_template">Roska-Paiva: %1$s on %2$s, every %3$d week(s). I will remind you the evening before.</string>
+    <string name="child_care_event_meal">child ate</string>
+    <string name="child_care_event_vitamins">vitamins</string>
+    <string name="child_care_event_other">child event</string>
+    <string name="child_care_logged_toast">Saved: %1$s at %2$s</string>
+    <string name="child_care_query_found">Last "%1$s" was at %2$s.</string>
+    <string name="child_care_query_not_found">No records yet for "%1$s".</string>
+    <string name="child_care_preview_log">Lapsen Vahti: "%1$s" at %2$s saved to shared log.</string>
+    <string name="child_care_preview_query">Lapsen Vahti: I will check the latest "%1$s" event and answer by voice.</string>
     <string name="widget_voice_label">Voice</string>
     <string name="widget_voice_description">One tap to start voice input</string>
     <string name="widget_voice_content_description">Start voice input</string>

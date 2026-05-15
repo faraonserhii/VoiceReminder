@@ -69,6 +69,10 @@ import com.proapps.voiceremind.sahko.SahkoVahtiCommandParser
 import com.proapps.voiceremind.sahko.SahkoVahtiScheduler
 import com.proapps.voiceremind.waste.WastePickupCommandParser
 import com.proapps.voiceremind.waste.WastePickupScheduler
+import com.proapps.voiceremind.child.ChildCareCommandParser
+import com.proapps.voiceremind.child.ChildCareCommand
+import com.proapps.voiceremind.child.ChildCareLogStore
+import com.proapps.voiceremind.child.ChildEventType
 import com.proapps.voiceremind.messaging.MessageReminderNotifier
 import com.proapps.voiceremind.messaging.MessageReminderScheduler
 import com.proapps.voiceremind.security.SensitiveDataVault
@@ -311,6 +315,10 @@ class MainActivity : AppCompatActivity() {
             return@registerForActivityResult
         }
 
+        if (handleChildCareCommand(spokenText)) {
+            return@registerForActivityResult
+        }
+
         if (handleExpenseLogCommand(spokenText)) {
             return@registerForActivityResult
         }
@@ -475,6 +483,10 @@ class MainActivity : AppCompatActivity() {
             }
 
             if (handleWastePickupCommand(text)) {
+                return@setOnClickListener
+            }
+
+            if (handleChildCareCommand(text)) {
                 return@setOnClickListener
             }
 
@@ -704,6 +716,28 @@ class MainActivity : AppCompatActivity() {
                 String.format(Locale.US, "%.2f", expenseCommand.amountEuro),
                 expenseCommand.note
             )
+            previewRouteButton.isEnabled = false
+            return
+        }
+
+        val childCommand = ChildCareCommandParser.extract(text)
+        if (childCommand != null) {
+            parsedPreview.text = when (childCommand) {
+                is ChildCareCommand.LogEvent -> {
+                    getString(
+                        R.string.child_care_preview_log,
+                        childCommand.note,
+                        childCommand.happenedAt.toLocalTime().format(timeFormatter)
+                    )
+                }
+
+                is ChildCareCommand.QueryLastEvent -> {
+                    getString(
+                        R.string.child_care_preview_query,
+                        childEventTypeLabel(childCommand.eventType)
+                    )
+                }
+            }
             previewRouteButton.isEnabled = false
             return
         }
@@ -1936,6 +1970,75 @@ class MainActivity : AppCompatActivity() {
         parsedPreview.text = getString(R.string.expense_preview_template, amountText, command.note)
         reminderInput.text?.clear()
         return true
+    }
+
+    private fun handleChildCareCommand(rawText: String): Boolean {
+        val command = ChildCareCommandParser.extract(rawText) ?: return false
+
+        when (command) {
+            is ChildCareCommand.LogEvent -> {
+                val happenedAtEpoch = command
+                    .happenedAt
+                    .atZone(ZoneId.systemDefault())
+                    .toInstant()
+                    .toEpochMilli()
+
+                ChildCareLogStore.append(
+                    context = this,
+                    eventType = command.eventType,
+                    happenedAtEpochMillis = happenedAtEpoch,
+                    note = command.note
+                )
+
+                val timeLabel = command.happenedAt.toLocalTime().format(timeFormatter)
+                val response = getString(R.string.child_care_logged_toast, command.note, timeLabel)
+                speakOrShowChildCareResponse(response)
+                parsedPreview.text = getString(R.string.child_care_preview_log, command.note, timeLabel)
+                reminderInput.text?.clear()
+                return true
+            }
+
+            is ChildCareCommand.QueryLastEvent -> {
+                val latest = ChildCareLogStore.findLatestByType(this, command.eventType)
+                val response = if (latest == null) {
+                    getString(R.string.child_care_query_not_found, childEventTypeLabel(command.eventType))
+                } else {
+                    val timeLabel = ChildCareLogStore.formatTime(latest.timestampEpochMillis)
+                    getString(
+                        R.string.child_care_query_found,
+                        childEventTypeLabel(command.eventType),
+                        timeLabel
+                    )
+                }
+
+                speakOrShowChildCareResponse(response)
+                parsedPreview.text = response
+                reminderInput.text?.clear()
+                return true
+            }
+        }
+    }
+
+    private fun speakOrShowChildCareResponse(message: String) {
+        if (isNightSilentModeEnabled() && isQuietHoursNow()) {
+            vibrateQuietFeedback()
+            Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+            return
+        }
+
+        if (isTtsReady) {
+            tts?.speak(message, TextToSpeech.QUEUE_FLUSH, null, "child_care_response")
+        } else {
+            Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun childEventTypeLabel(type: ChildEventType): String {
+        return when (type) {
+            ChildEventType.MEAL -> getString(R.string.child_care_event_meal)
+            ChildEventType.VITAMINS -> getString(R.string.child_care_event_vitamins)
+            ChildEventType.OTHER -> getString(R.string.child_care_event_other)
+        }
     }
 
     private fun requestPermissionsOnFirstLaunchIfNeeded() {

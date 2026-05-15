@@ -191,6 +191,14 @@
     <string name="waste_notification_body">Завтра вивозять %1$s. Не забудь викотити бак до дороги!</string>
     <string name="waste_scheduled">Roska-Paiva увімкнено: %1$s по %2$s, раз на %3$d тиж.</string>
     <string name="waste_preview_template">Roska-Paiva: %1$s по %2$s, раз на %3$d тиж. Нагадаю напередодні ввечері.</string>
+    <string name="child_care_event_meal">дитина їла</string>
+    <string name="child_care_event_vitamins">вітаміни</string>
+    <string name="child_care_event_other">подія дитини</string>
+    <string name="child_care_logged_toast">Збережено: %1$s о %2$s</string>
+    <string name="child_care_query_found">Останній раз "%1$s" було о %2$s.</string>
+    <string name="child_care_query_not_found">Поки немає записів для "%1$s".</string>
+    <string name="child_care_preview_log">Lapsen Vahti: "%1$s" о %2$s збережено у спільний лог.</string>
+    <string name="child_care_preview_query">Lapsen Vahti: перевірю останню подію "%1$s" і відповім голосом.</string>
     <string name="widget_voice_label">Голос</string>
     <string name="widget_voice_description">Одне натискання для запуску голосового вводу</string>
     <string name="widget_voice_content_description">Запустити голосовий ввід</string>
