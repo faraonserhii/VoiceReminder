@@ -25,6 +25,8 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import android.view.View
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatDelegate
@@ -35,6 +37,8 @@ import androidx.core.os.LocaleListCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.widget.doAfterTextChanged
+import androidx.core.view.GravityCompat
+import androidx.drawerlayout.widget.DrawerLayout
 import com.google.android.material.datepicker.CalendarConstraints
 import com.google.android.material.datepicker.DateValidatorPointForward
 import com.google.android.material.datepicker.MaterialDatePicker
@@ -49,8 +53,18 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.proapps.voiceremind.geofence.StoreGeofenceManager
+import com.proapps.voiceremind.medication.MedicationReminderNotifier
+import com.proapps.voiceremind.medication.MedicationReminderParser
+import com.proapps.voiceremind.medication.MedicationReminderScheduler
+import com.proapps.voiceremind.medication.MedicationLogShareHelper
+import com.proapps.voiceremind.medication.MedicationLogStore
+import com.proapps.voiceremind.sauna.SaunaTimerCommandParser
+import com.proapps.voiceremind.sauna.SaunaTimerScheduler
+import com.proapps.voiceremind.sahko.SahkoVahtiCommandParser
+import com.proapps.voiceremind.sahko.SahkoVahtiScheduler
 import com.proapps.voiceremind.messaging.MessageReminderNotifier
 import com.proapps.voiceremind.messaging.MessageReminderScheduler
+import com.proapps.voiceremind.security.SensitiveDataVault
 import com.proapps.voiceremind.weather.OpenMeteoClient
 import com.proapps.voiceremind.weather.WeatherAlertNotifier
 import com.proapps.voiceremind.weather.WeatherAlertScheduler
@@ -83,6 +97,8 @@ private const val WEATHER_PREFS = "weather_prefs"
 private const val WEATHER_FALLBACK_CITY = "weather_fallback_city"
 private const val APP_SETTINGS_PREFS = "app_settings_prefs"
 private const val DEFAULT_REMINDER_TIME = "default_reminder_time"
+private const val SAHKO_NIGHT_START_HOUR = "sahko_night_start_hour"
+private const val SAHKO_NIGHT_END_HOUR = "sahko_night_end_hour"
 private const val HANDS_FREE_VOICE_CONFIRMATION_ENABLED = "hands_free_voice_confirmation_enabled"
 private const val HSL_PACKAGE = "fi.hsl.app"
 private const val GOOGLE_MAPS_PACKAGE = "com.google.android.apps.maps"
@@ -126,6 +142,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var weatherFallbackCityButton: Button
     private lateinit var defaultReminderTimeText: TextView
     private lateinit var defaultReminderTimeButton: Button
+    private lateinit var sahkoNightWindowText: TextView
+    private lateinit var sahkoNightWindowButton: Button
     private lateinit var handsFreeVoiceStatusText: TextView
     private lateinit var handsFreeVoiceSwitch: SwitchMaterial
     private lateinit var nightSilentModeStatusText: TextView
@@ -139,7 +157,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var previewRouteButton: Button
     private lateinit var editPendingButton: Button
     private lateinit var clearDraftButton: Button
+    private lateinit var medicationExportLogButton: Button
+    private lateinit var medicationOpenLogButton: Button
+    private lateinit var drawerLayout: DrawerLayout
+    private lateinit var openSettingsButton: ImageButton
     private lateinit var pendingActionsRow: View
+    private var activeDrawerSection: View? = null
 
     private var pendingReminder: ParsedReminder? = null
     private var lastClearedDraftSnapshot: DraftSnapshot? = null
@@ -260,6 +283,19 @@ class MainActivity : AppCompatActivity() {
         }
 
         reminderInput.setText(spokenText)
+
+        if (handleSensitiveDataCommand(spokenText)) {
+            return@registerForActivityResult
+        }
+
+        if (handleSahkoVahtiCommand(spokenText)) {
+            return@registerForActivityResult
+        }
+
+        if (handleSaunaTimerCommand(spokenText)) {
+            return@registerForActivityResult
+        }
+
         updatePreview(spokenText)
 
         val prepared = parseReminderWithDomainFallback(spokenText)
@@ -301,6 +337,25 @@ class MainActivity : AppCompatActivity() {
         enableEdgeToEdge()
         setContentView(R.layout.activity_main)
 
+        drawerLayout = findViewById(R.id.drawerLayout)
+        openSettingsButton = findViewById(R.id.openSettingsButton)
+        openSettingsButton.setOnClickListener {
+            if (drawerLayout.isDrawerOpen(GravityCompat.START)) {
+                drawerLayout.closeDrawer(GravityCompat.START)
+            } else {
+                drawerLayout.openDrawer(GravityCompat.START)
+            }
+        }
+        drawerLayout.addDrawerListener(object : DrawerLayout.SimpleDrawerListener() {
+            override fun onDrawerSlide(drawerView: View, slideOffset: Float) {
+                openSettingsButton.rotation = 90f * slideOffset
+            }
+
+            override fun onDrawerClosed(drawerView: View) {
+                openSettingsButton.rotation = 0f
+            }
+        })
+
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
@@ -319,6 +374,8 @@ class MainActivity : AppCompatActivity() {
         weatherFallbackCityButton = findViewById(R.id.weatherFallbackCityButton)
         defaultReminderTimeText = findViewById(R.id.defaultReminderTimeText)
         defaultReminderTimeButton = findViewById(R.id.defaultReminderTimeButton)
+        sahkoNightWindowText = findViewById(R.id.sahkoNightWindowText)
+        sahkoNightWindowButton = findViewById(R.id.sahkoNightWindowButton)
         handsFreeVoiceStatusText = findViewById(R.id.handsFreeVoiceStatusText)
         handsFreeVoiceSwitch = findViewById(R.id.handsFreeVoiceSwitch)
         nightSilentModeStatusText = findViewById(R.id.nightSilentModeStatusText)
@@ -332,7 +389,19 @@ class MainActivity : AppCompatActivity() {
         previewRouteButton = findViewById(R.id.previewRouteButton)
         editPendingButton = findViewById(R.id.editPendingButton)
         clearDraftButton = findViewById(R.id.clearDraftButton)
+        medicationExportLogButton = findViewById(R.id.medicationExportLogButton)
+        medicationOpenLogButton = findViewById(R.id.medicationOpenLogButton)
         pendingActionsRow = findViewById(R.id.pendingActionsRow)
+        val permissionsMicRow: View = findViewById(R.id.permissionsMicStatusRow)
+        val permissionsCalendarRow: View = findViewById(R.id.permissionsCalendarStatusRow)
+        val weatherFallbackRow: View = findViewById(R.id.weatherFallbackRow)
+        val defaultReminderTimeRow: View = findViewById(R.id.defaultReminderTimeRow)
+        val sahkoNightWindowRow: View = findViewById(R.id.sahkoNightWindowRow)
+        val handsFreeVoiceRow: View = findViewById(R.id.handsFreeVoiceRow)
+        val nightSilentModeRow: View = findViewById(R.id.nightSilentModeRow)
+        val emojiCategoriesRow: View = findViewById(R.id.emojiCategoriesRow)
+        val tireFreezeThresholdRow: View = findViewById(R.id.tireFreezeThresholdRow)
+        val tirePolicyRow: View = findViewById(R.id.tirePolicyRow)
 
         findViewById<Button>(R.id.voiceButton).setOnClickListener {
             if (maybeShowDeferredPermissionReminderForVoice()) {
@@ -369,6 +438,19 @@ class MainActivity : AppCompatActivity() {
             }
 
             val text = reminderInput.text?.toString().orEmpty()
+
+            if (handleSensitiveDataCommand(text)) {
+                return@setOnClickListener
+            }
+
+            if (handleSahkoVahtiCommand(text)) {
+                return@setOnClickListener
+            }
+
+            if (handleSaunaTimerCommand(text)) {
+                return@setOnClickListener
+            }
+
             val parsed = parseReminderWithDomainFallback(text)
 
             if (parsed == null) {
@@ -393,17 +475,34 @@ class MainActivity : AppCompatActivity() {
             showClearDraftConfirmDialog()
         }
 
+        medicationExportLogButton.setOnClickListener {
+            exportMedicationLog()
+        }
+
+        medicationOpenLogButton.setOnClickListener {
+            markDrawerSectionActive(weatherFallbackRow)
+            openMedicationLogDialog()
+        }
+
         weatherFallbackCityButton.setOnClickListener {
+            markDrawerSectionActive(weatherFallbackRow)
             showWeatherFallbackCityDialog()
         }
 
         defaultReminderTimeButton.setOnClickListener {
+            markDrawerSectionActive(defaultReminderTimeRow)
             showDefaultReminderTimeDialog()
+        }
+
+        sahkoNightWindowButton.setOnClickListener {
+            markDrawerSectionActive(sahkoNightWindowRow)
+            showSahkoNightWindowDialog()
         }
 
         handsFreeVoiceSwitch.isChecked = isHandsFreeVoiceConfirmationEnabled()
         updateHandsFreeVoiceStatusUi(handsFreeVoiceSwitch.isChecked)
         handsFreeVoiceSwitch.setOnCheckedChangeListener { _, isChecked ->
+            markDrawerSectionActive(handsFreeVoiceRow)
             setHandsFreeVoiceConfirmationEnabled(isChecked)
             updateHandsFreeVoiceStatusUi(isChecked)
         }
@@ -411,6 +510,7 @@ class MainActivity : AppCompatActivity() {
         nightSilentModeSwitch.isChecked = isNightSilentModeEnabled()
         updateNightSilentModeStatusUi(nightSilentModeSwitch.isChecked)
         nightSilentModeSwitch.setOnCheckedChangeListener { _, isChecked ->
+            markDrawerSectionActive(nightSilentModeRow)
             setNightSilentModeEnabled(isChecked)
             updateNightSilentModeStatusUi(isChecked)
         }
@@ -418,6 +518,7 @@ class MainActivity : AppCompatActivity() {
         emojiCategoriesSwitch.isChecked = isEmojiCategoriesEnabled()
         updateEmojiCategoriesStatusUi(emojiCategoriesSwitch.isChecked)
         emojiCategoriesSwitch.setOnCheckedChangeListener { _, isChecked ->
+            markDrawerSectionActive(emojiCategoriesRow)
             setEmojiCategoriesEnabled(isChecked)
             updateEmojiCategoriesStatusUi(isChecked)
             val currentText = reminderInput.text?.toString().orEmpty()
@@ -427,10 +528,12 @@ class MainActivity : AppCompatActivity() {
         }
 
         tireFreezeThresholdButton.setOnClickListener {
+            markDrawerSectionActive(tireFreezeThresholdRow)
             showTireFreezeThresholdDialog()
         }
 
         tirePolicyButton.setOnClickListener {
+            markDrawerSectionActive(tirePolicyRow)
             showTirePolicyDatesDialog()
         }
 
@@ -442,6 +545,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         permissionsMicStatusRow.setOnClickListener {
+            markDrawerSectionActive(permissionsMicRow)
             showPermissionPurposeDialog(
                 titleRes = R.string.permissions_mic_info_title,
                 messageRes = R.string.permissions_mic_info_message
@@ -460,6 +564,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         permissionsCalendarStatusRow.setOnClickListener {
+            markDrawerSectionActive(permissionsCalendarRow)
             showPermissionPurposeDialog(
                 titleRes = R.string.permissions_calendar_info_title,
                 messageRes = R.string.permissions_calendar_info_message
@@ -481,7 +586,10 @@ class MainActivity : AppCompatActivity() {
         updatePermissionsStatusUi()
         updateWeatherFallbackCityUi()
         updateDefaultReminderTimeUi()
+        updateSahkoNightWindowUi()
         updateTireSettingsUi()
+        markDrawerSectionActive(weatherFallbackRow)
+        handleLaunchIntent(intent)
     }
 
     override fun onPause() {
@@ -501,6 +609,12 @@ class MainActivity : AppCompatActivity() {
         updatePermissionsStatusUi()
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleLaunchIntent(intent)
+    }
+
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
 
@@ -515,6 +629,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updatePreview(text: String) {
+        val sahkoCommand = SahkoVahtiCommandParser.extract(text)
+        if (sahkoCommand != null) {
+            parsedPreview.text = getString(R.string.sahko_preview_template, sahkoCommand.applianceLabel)
+            previewRouteButton.isEnabled = false
+            return
+        }
+
+        val saunaCommand = SaunaTimerCommandParser.extract(text)
+        if (saunaCommand != null) {
+            parsedPreview.text = getString(R.string.sauna_timer_preview_template, saunaCommand.minutes)
+            previewRouteButton.isEnabled = false
+            return
+        }
+
         val parsed = parseReminderWithDomainFallback(text)
         if (parsed == null) {
             parsedPreview.text = getString(R.string.parse_failed_hint)
@@ -563,6 +691,7 @@ class MainActivity : AppCompatActivity() {
     private fun savePendingReminder() {
         val reminder = pendingReminder ?: return
         val calendarId = getWritableCalendarId()
+        val medicationPlan = extractMedicationPlan(reminder)
 
         if (calendarId == null) {
             Toast.makeText(this, getString(R.string.calendar_not_found), Toast.LENGTH_LONG).show()
@@ -587,6 +716,9 @@ class MainActivity : AppCompatActivity() {
             put(CalendarContract.Events.DTSTART, startMillis)
             put(CalendarContract.Events.DTEND, endMillis)
             put(CalendarContract.Events.EVENT_TIMEZONE, ZoneId.systemDefault().id)
+            medicationPlan?.let {
+                put(CalendarContract.Events.RRULE, MedicationReminderParser.toDailyRRule(it.daysCount))
+            }
         }
 
         val createdUri = contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)
@@ -597,6 +729,14 @@ class MainActivity : AppCompatActivity() {
                 maybeRegisterStoreGeoReminder(eventIdLong, reminder)
             }
             maybeWarnEarlyFrostForTires(reminder)
+
+            MedicationReminderNotifier.ensureChannel(this)
+            scheduleMedicationReminderIfNeeded(
+                eventId = eventId,
+                reminder = reminder,
+                triggerEpochMillis = startMillis,
+                medicationPlan = medicationPlan
+            )
 
             MessageReminderNotifier.ensureChannel(this)
             scheduleMessageReminderIfNeeded(
@@ -652,6 +792,32 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    private fun extractMedicationPlan(reminder: ParsedReminder): com.proapps.voiceremind.medication.MedicationPlan? {
+        val rawInput = reminderInput.text?.toString().orEmpty()
+        val source = rawInput.ifBlank { reminder.title }
+        return MedicationReminderParser.extract(
+            rawText = source,
+            now = LocalDateTime.now(),
+            defaultTime = getConfiguredDefaultReminderTime()
+        )
+    }
+
+    private fun scheduleMedicationReminderIfNeeded(
+        eventId: String,
+        reminder: ParsedReminder,
+        triggerEpochMillis: Long,
+        medicationPlan: com.proapps.voiceremind.medication.MedicationPlan?
+    ) {
+        val plan = medicationPlan ?: return
+        MedicationReminderScheduler.schedule(
+            context = this,
+            planId = eventId,
+            title = reminder.title,
+            firstTriggerEpochMillis = triggerEpochMillis,
+            daysCount = plan.daysCount
+        )
+    }
+
     private fun applyDomainDefaults(reminder: ParsedReminder): ParsedReminder {
         val withCategory = if (isEmojiCategoriesEnabled()) {
             reminder.copy(title = ReminderCategoryEmoji.apply(reminder.title))
@@ -693,6 +859,20 @@ class MainActivity : AppCompatActivity() {
                 usedDefaultTime = command.explicitTime == null,
                 location = command.recipient,
                 durationMinutes = 15
+            )
+        }
+
+        MedicationReminderParser.extract(
+            rawText = rawText,
+            now = LocalDateTime.now(),
+            defaultTime = getConfiguredDefaultReminderTime()
+        )?.let { plan ->
+            return ParsedReminder(
+                title = plan.title,
+                eventDateTime = plan.firstIntakeDateTime,
+                usedDefaultTime = plan.usedDefaultTime,
+                location = null,
+                durationMinutes = 10
             )
         }
 
@@ -899,6 +1079,20 @@ class MainActivity : AppCompatActivity() {
             speechLauncher.launch(intent)
         } else {
             Toast.makeText(this, getString(R.string.voice_not_supported), Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun handleLaunchIntent(intent: Intent?) {
+        if (intent?.action != ACTION_START_VOICE_INPUT) {
+            return
+        }
+        intent.action = null
+
+        reminderInput.post {
+            if (maybeShowDeferredPermissionReminderForVoice()) {
+                return@post
+            }
+            startVoiceInput()
         }
     }
 
@@ -1462,6 +1656,159 @@ class MainActivity : AppCompatActivity() {
             .apply()
     }
 
+    private fun exportMedicationLog() {
+        val shareIntent = MedicationLogShareHelper.buildShareIntent(this)
+        if (shareIntent == null) {
+            Toast.makeText(this, getString(R.string.medication_export_no_log), Toast.LENGTH_LONG).show()
+            return
+        }
+
+        val chooser = Intent.createChooser(shareIntent, getString(R.string.medication_export_chooser_title))
+        if (shareIntent.resolveActivity(packageManager) != null || chooser.resolveActivity(packageManager) != null) {
+            startActivity(chooser)
+        } else {
+            Toast.makeText(this, getString(R.string.message_no_app_found), Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun openMedicationLogDialog() {
+        val entries = MedicationLogStore.readLatestEntries(this, limit = 10)
+        if (entries.isEmpty()) {
+            Toast.makeText(this, getString(R.string.medication_export_no_log), Toast.LENGTH_LONG).show()
+            return
+        }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.medication_open_log_title)
+            .setMessage(entries.joinToString(separator = "\n"))
+            .setPositiveButton(R.string.permissions_info_dialog_ok, null)
+            .show()
+    }
+
+    private fun markDrawerSectionActive(section: View) {
+        activeDrawerSection?.isActivated = false
+        section.isActivated = true
+        activeDrawerSection = section
+    }
+
+    private fun handleSensitiveDataCommand(rawText: String): Boolean {
+        val command = SensitiveDataCommandParser.parse(rawText) ?: return false
+
+        when (command) {
+            is SensitiveDataCommand.Save -> {
+                val saved = SensitiveDataVault.save(
+                    context = this,
+                    type = command.type,
+                    value = command.value
+                )
+
+                if (!saved) {
+                    Toast.makeText(this, getString(R.string.sensitive_data_save_failed), Toast.LENGTH_LONG).show()
+                    return true
+                }
+
+                val typeLabel = getString(command.type.labelRes)
+                parsedPreview.text = getString(R.string.sensitive_data_saved_preview, typeLabel)
+                Toast.makeText(this, getString(R.string.sensitive_data_saved, typeLabel), Toast.LENGTH_LONG).show()
+                pendingReminder = null
+                updatePendingEditVisibility()
+                saveDraftToPrefs()
+                return true
+            }
+
+            is SensitiveDataCommand.Query -> {
+                val value = SensitiveDataVault.load(this, command.type)
+                val typeLabel = getString(command.type.labelRes)
+
+                if (value.isNullOrBlank()) {
+                    Toast.makeText(this, getString(R.string.sensitive_data_not_found, typeLabel), Toast.LENGTH_LONG).show()
+                    return true
+                }
+
+                revealSensitiveDataWithBiometric(typeLabel, value)
+                return true
+            }
+        }
+    }
+
+    private fun revealSensitiveDataWithBiometric(typeLabel: String, value: String) {
+        val authenticators = BiometricManager.Authenticators.BIOMETRIC_STRONG or
+            BiometricManager.Authenticators.DEVICE_CREDENTIAL
+        val biometricManager = BiometricManager.from(this)
+        val canAuthenticate = biometricManager.canAuthenticate(authenticators)
+        if (canAuthenticate != BiometricManager.BIOMETRIC_SUCCESS) {
+            Toast.makeText(this, getString(R.string.sensitive_data_biometric_unavailable), Toast.LENGTH_LONG).show()
+            return
+        }
+
+        val executor = ContextCompat.getMainExecutor(this)
+        val prompt = BiometricPrompt(this, executor, object : BiometricPrompt.AuthenticationCallback() {
+            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                MaterialAlertDialogBuilder(this@MainActivity)
+                    .setTitle(getString(R.string.sensitive_data_reveal_title, typeLabel))
+                    .setMessage(value)
+                    .setPositiveButton(R.string.permissions_info_dialog_ok, null)
+                    .show()
+            }
+
+            override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                if (errorCode == BiometricPrompt.ERROR_USER_CANCELED ||
+                    errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON ||
+                    errorCode == BiometricPrompt.ERROR_CANCELED
+                ) {
+                    return
+                }
+                Toast.makeText(this@MainActivity, getString(R.string.sensitive_data_biometric_failed), Toast.LENGTH_LONG).show()
+            }
+        })
+
+        val promptInfo = BiometricPrompt.PromptInfo.Builder()
+            .setTitle(getString(R.string.sensitive_data_biometric_title))
+            .setSubtitle(getString(R.string.sensitive_data_biometric_subtitle, typeLabel))
+            .setAllowedAuthenticators(authenticators)
+            .build()
+
+        prompt.authenticate(promptInfo)
+    }
+
+    private fun handleSahkoVahtiCommand(rawText: String): Boolean {
+        val command = SahkoVahtiCommandParser.extract(rawText) ?: return false
+
+        SahkoVahtiScheduler.schedule(
+            context = this,
+            appliance = command.applianceLabel,
+            nightHourStart = getSahkoNightStartHour(),
+            nightHourEndExclusive = getSahkoNightEndHour()
+        )
+
+        Toast.makeText(
+            this,
+            getString(R.string.sahko_scheduled, command.applianceLabel),
+            Toast.LENGTH_LONG
+        ).show()
+        parsedPreview.text = getString(R.string.sahko_preview_template, command.applianceLabel)
+        reminderInput.text?.clear()
+        return true
+    }
+
+    private fun handleSaunaTimerCommand(rawText: String): Boolean {
+        val command = SaunaTimerCommandParser.extract(rawText) ?: return false
+
+        SaunaTimerScheduler.schedule(
+            context = this,
+            minutes = command.minutes
+        )
+
+        Toast.makeText(
+            this,
+            getString(R.string.sauna_timer_scheduled, command.minutes),
+            Toast.LENGTH_LONG
+        ).show()
+        parsedPreview.text = getString(R.string.sauna_timer_preview_template, command.minutes)
+        reminderInput.text?.clear()
+        return true
+    }
+
     private fun requestPermissionsOnFirstLaunchIfNeeded() {
         val prefs = getSharedPreferences(FIRST_LAUNCH_PREFS, MODE_PRIVATE)
         if (prefs.getBoolean(FIRST_LAUNCH_PERMISSIONS_REQUESTED, false)) {
@@ -1964,6 +2311,84 @@ class MainActivity : AppCompatActivity() {
                 updatePreview(currentText)
             }
         }
+    }
+
+    private fun getSahkoNightStartHour(): Int {
+        return getSettingsPrefs().getInt(SAHKO_NIGHT_START_HOUR, 22).coerceIn(0, 23)
+    }
+
+    private fun getSahkoNightEndHour(): Int {
+        return getSettingsPrefs().getInt(SAHKO_NIGHT_END_HOUR, 7).coerceIn(0, 23)
+    }
+
+    private fun setSahkoNightWindow(startHour: Int, endHour: Int) {
+        getSettingsPrefs().edit()
+            .putInt(SAHKO_NIGHT_START_HOUR, startHour.coerceIn(0, 23))
+            .putInt(SAHKO_NIGHT_END_HOUR, endHour.coerceIn(0, 23))
+            .apply()
+    }
+
+    private fun updateSahkoNightWindowUi() {
+        val start = LocalTime.of(getSahkoNightStartHour(), 0).format(timeFormatter)
+        val end = LocalTime.of(getSahkoNightEndHour(), 0).format(timeFormatter)
+        sahkoNightWindowText.text = getString(R.string.sahko_night_window_value, start, end)
+    }
+
+    private fun showSahkoNightWindowDialog() {
+        var selectedStart = LocalTime.of(getSahkoNightStartHour(), 0)
+        var selectedEnd = LocalTime.of(getSahkoNightEndHour(), 0)
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val padding = (16 * resources.displayMetrics.density).toInt()
+            setPadding(padding, padding, padding, padding)
+        }
+
+        val startInput = EditText(this).apply {
+            hint = getString(R.string.sahko_night_start_hint)
+            isFocusable = false
+            isClickable = true
+            setText(selectedStart.format(timeFormatter))
+            setOnClickListener {
+                openTimePicker(selectedStart) { picked ->
+                    selectedStart = picked.withMinute(0)
+                    setText(selectedStart.format(timeFormatter))
+                }
+            }
+        }
+
+        val endInput = EditText(this).apply {
+            hint = getString(R.string.sahko_night_end_hint)
+            isFocusable = false
+            isClickable = true
+            setText(selectedEnd.format(timeFormatter))
+            setOnClickListener {
+                openTimePicker(selectedEnd) { picked ->
+                    selectedEnd = picked.withMinute(0)
+                    setText(selectedEnd.format(timeFormatter))
+                }
+            }
+        }
+
+        container.addView(startInput)
+        container.addView(endInput)
+
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.sahko_night_window_title)
+            .setView(container)
+            .setNegativeButton(R.string.confirm_dialog_cancel, null)
+            .setPositiveButton(R.string.confirm_dialog_save, null)
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                setSahkoNightWindow(selectedStart.hour, selectedEnd.hour)
+                updateSahkoNightWindowUi()
+                dialog.dismiss()
+            }
+        }
+
+        dialog.show()
     }
 
     private fun showDirectionsAction(reminder: ParsedReminder) {
