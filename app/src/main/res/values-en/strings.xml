@@ -166,6 +166,7 @@
     <string name="sahko_notification_title">Sahko-Vahti: cheap hour</string>
     <string name="sahko_notification_body">Cheap tariff is active now: turn on %1$s. Price ~ %2$s c/kWh.</string>
     <string name="sahko_notification_body_generic">Cheap tariff is active now: you can turn on %1$s.</string>
+    <string name="sahko_unavailable_prices_body">Could not load electricity prices. Try again later and restart Sähkö-Vahti for %1$s.</string>
     <string name="sahko_default_appliance">appliance</string>
     <string name="sahko_preview_template">Sahko-Vahti: I will find the cheapest night hour and remind you to start %1$s.</string>
     <string name="sahko_scheduled">Sahko-Vahti started: searching cheap night hour for %1$s</string>

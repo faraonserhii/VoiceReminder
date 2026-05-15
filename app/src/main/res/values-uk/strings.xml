@@ -156,6 +156,7 @@
     <string name="sahko_notification_title">Sahko-Vahti: дешева година</string>
     <string name="sahko_notification_body">Зараз вигідний тариф: вмикай %1$s. Ціна ~ %2$s c/kWh.</string>
     <string name="sahko_notification_body_generic">Зараз вигідний тариф: можна ввімкнути %1$s.</string>
+    <string name="sahko_unavailable_prices_body">Не вдалося завантажити ціни на електроенергію. Спробуй пізніше і знову запусти Sähkö-Vahti для %1$s.</string>
     <string name="sahko_default_appliance">прилад</string>
     <string name="sahko_preview_template">Sahko-Vahti: знайду найдешевшу нічну годину і нагадаю увімкнути %1$s.</string>
     <string name="sahko_scheduled">Sahko-Vahti запущено: шукаю дешеву нічну годину для %1$s</string>
