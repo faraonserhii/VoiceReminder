@@ -178,6 +178,17 @@
     <string name="parking_notification_body">Час паркування закінчується о %1$s. Залишилось %2$d хвилин: повернись до авто або продовж оплату.</string>
     <string name="parking_scheduled">Parking-Control увімкнено: паркування до %1$s, нагадаю за %2$d хвилин.</string>
     <string name="parking_preview_template">Parking-Control: нагадаю за 10 хвилин до %1$s.</string>
+    <string name="parcel_channel_name">Posti-Nouto</string>
+    <string name="parcel_channel_description">Нагадування про посилки, коли ти поруч із пунктом видачі</string>
+    <string name="parcel_notification_title">Posti-Nouto</string>
+    <string name="parcel_notification_body">Ти поруч із %2$s. Забери "%1$s", поки не завершився термін зберігання.</string>
+    <string name="parcel_default_item">посилку</string>
+    <string name="parcel_default_place">пункт видачі</string>
+    <string name="parcel_geo_permission_required">Для Posti-Nouto потрібен доступ до геолокації</string>
+    <string name="parcel_geo_geocode_failed">Не вдалося визначити локацію видачі посилки</string>
+    <string name="parcel_geo_register_failed">Не вдалося увімкнути нагадування Posti-Nouto</string>
+    <string name="parcel_geo_armed">Posti-Nouto увімкнено: "%1$s" із %2$s до %3$s</string>
+    <string name="parcel_preview_template">Posti-Nouto: "%1$s" із %2$s до %3$s. Нагадаю, коли будеш поруч.</string>
     <string name="expense_logged_toast">Витрату збережено: %1$s EUR (%2$s)</string>
     <string name="expense_preview_template">Lahimaksu Muistutus: записав витрату %1$s EUR на "%2$s".</string>
     <string name="expense_weekly_channel_name">Lahimaksu Muistutus</string>

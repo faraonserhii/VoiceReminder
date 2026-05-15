@@ -188,6 +188,17 @@
     <string name="parking_notification_body">Parking expires at %1$s. %2$d minutes left: return to the car or extend payment.</string>
     <string name="parking_scheduled">Parking-Control enabled: parking until %1$s, I will remind %2$d minutes earlier.</string>
     <string name="parking_preview_template">Parking-Control: reminder 10 minutes before %1$s.</string>
+    <string name="parcel_channel_name">Posti-Nouto</string>
+    <string name="parcel_channel_description">Parcel reminders when you pass near pickup point</string>
+    <string name="parcel_notification_title">Posti-Nouto</string>
+    <string name="parcel_notification_body">You are near %2$s. Pick up "%1$s" before storage deadline expires.</string>
+    <string name="parcel_default_item">parcel</string>
+    <string name="parcel_default_place">pickup point</string>
+    <string name="parcel_geo_permission_required">Posti-Nouto needs location permission</string>
+    <string name="parcel_geo_geocode_failed">Could not resolve parcel pickup location</string>
+    <string name="parcel_geo_register_failed">Failed to enable Posti-Nouto reminder</string>
+    <string name="parcel_geo_armed">Posti-Nouto enabled: "%1$s" from %2$s until %3$s</string>
+    <string name="parcel_preview_template">Posti-Nouto: "%1$s" from %2$s until %3$s. I will remind you when you are nearby.</string>
     <string name="expense_logged_toast">Expense saved: %1$s EUR (%2$s)</string>
     <string name="expense_preview_template">Lahimaksu Muistutus: logged %1$s EUR for "%2$s".</string>
     <string name="expense_weekly_channel_name">Lahimaksu Muistutus</string>

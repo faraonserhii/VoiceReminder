@@ -63,6 +63,8 @@ import com.proapps.voiceremind.medication.MedicationLogShareHelper
 import com.proapps.voiceremind.medication.MedicationLogStore
 import com.proapps.voiceremind.parking.ParkingControlCommandParser
 import com.proapps.voiceremind.parking.ParkingControlScheduler
+import com.proapps.voiceremind.parcel.ParcelPickupCommandParser
+import com.proapps.voiceremind.parcel.ParcelPickupGeofenceManager
 import com.proapps.voiceremind.sauna.SaunaTimerCommandParser
 import com.proapps.voiceremind.sauna.SaunaTimerScheduler
 import com.proapps.voiceremind.sahko.SahkoVahtiCommandParser
@@ -179,6 +181,7 @@ class MainActivity : AppCompatActivity() {
     private var lastClearedDraftSnapshot: DraftSnapshot? = null
     private var pendingVoiceReminder: ParsedReminder? = null
     private var pendingStoreGeoRequest: StoreGeoRequest? = null
+    private var pendingParcelGeoRequest: ParcelGeoRequest? = null
     private var isAwaitingVoiceDecision: Boolean = false
     private var tts: TextToSpeech? = null
     private var isTtsReady: Boolean = false
@@ -261,18 +264,22 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { result ->
         val granted = result.values.all { it }
-        val pending = pendingStoreGeoRequest
+        val pendingStore = pendingStoreGeoRequest
+        val pendingParcel = pendingParcelGeoRequest
 
-        if (!granted || pending == null) {
+        if (!granted || (pendingStore == null && pendingParcel == null)) {
             pendingStoreGeoRequest = null
+            pendingParcelGeoRequest = null
             if (!granted) {
-                Toast.makeText(this, getString(R.string.store_geo_permission_required), Toast.LENGTH_LONG).show()
+                Toast.makeText(this, getString(R.string.parcel_geo_permission_required), Toast.LENGTH_LONG).show()
             }
             return@registerForActivityResult
         }
 
         pendingStoreGeoRequest = null
-        registerStoreGeoReminder(pending)
+        pendingParcelGeoRequest = null
+        pendingStore?.let { registerStoreGeoReminder(it) }
+        pendingParcel?.let { registerParcelGeoReminder(it) }
     }
 
     private val speechLauncher = registerForActivityResult(
@@ -308,6 +315,10 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (handleParkingControlCommand(spokenText)) {
+            return@registerForActivityResult
+        }
+
+        if (handleParcelPickupCommand(spokenText)) {
             return@registerForActivityResult
         }
 
@@ -479,6 +490,10 @@ class MainActivity : AppCompatActivity() {
             }
 
             if (handleParkingControlCommand(text)) {
+                return@setOnClickListener
+            }
+
+            if (handleParcelPickupCommand(text)) {
                 return@setOnClickListener
             }
 
@@ -692,6 +707,18 @@ class MainActivity : AppCompatActivity() {
             parsedPreview.text = getString(
                 R.string.parking_preview_template,
                 parkingCommand.expiresAt.toLocalTime().format(timeFormatter)
+            )
+            previewRouteButton.isEnabled = false
+            return
+        }
+
+        val parcelCommand = ParcelPickupCommandParser.extract(text)
+        if (parcelCommand != null) {
+            parsedPreview.text = getString(
+                R.string.parcel_preview_template,
+                parcelCommand.itemLabel,
+                parcelCommand.pickupPlace,
+                parcelCommand.deadlineAt.toLocalDate().format(DateTimeFormatter.ofPattern("dd.MM", Locale.getDefault()))
             )
             previewRouteButton.isEnabled = false
             return
@@ -1927,6 +1954,66 @@ class MainActivity : AppCompatActivity() {
         return true
     }
 
+    private fun handleParcelPickupCommand(rawText: String): Boolean {
+        val command = ParcelPickupCommandParser.extract(rawText) ?: return false
+        val request = ParcelGeoRequest(
+            itemLabel = command.itemLabel,
+            pickupPlace = command.pickupPlace,
+            deadlineAt = command.deadlineAt
+        )
+
+        if (!StoreGeofenceManager.hasRequiredLocationPermission(this)) {
+            pendingParcelGeoRequest = request
+            requestStoreGeoPermissions.launch(requiredStoreGeoPermissions())
+            return true
+        }
+
+        registerParcelGeoReminder(request)
+        return true
+    }
+
+    private fun registerParcelGeoReminder(request: ParcelGeoRequest) {
+        Thread {
+            val client = OpenMeteoClient()
+            val point = client.geocode(request.pickupPlace)
+
+            runOnUiThread {
+                if (point == null) {
+                    Toast.makeText(this, getString(R.string.parcel_geo_geocode_failed), Toast.LENGTH_LONG).show()
+                    return@runOnUiThread
+                }
+
+                val deadlineEpoch = request.deadlineAt
+                    .atZone(ZoneId.systemDefault())
+                    .toInstant()
+                    .toEpochMilli()
+
+                runCatching {
+                    ParcelPickupGeofenceManager.registerParcelEnterGeofence(
+                        context = this,
+                        requestId = "parcel_geo_${request.itemLabel.hashCode()}_${deadlineEpoch}",
+                        latitude = point.latitude,
+                        longitude = point.longitude,
+                        itemLabel = request.itemLabel,
+                        pickupPlace = request.pickupPlace,
+                        deadlineEpochMillis = deadlineEpoch
+                    )
+                }.onSuccess {
+                    val deadlineLabel = request.deadlineAt.toLocalDate().format(DateTimeFormatter.ofPattern("dd.MM", Locale.getDefault()))
+                    Toast.makeText(
+                        this,
+                        getString(R.string.parcel_geo_armed, request.itemLabel, request.pickupPlace, deadlineLabel),
+                        Toast.LENGTH_LONG
+                    ).show()
+                    parsedPreview.text = getString(R.string.parcel_preview_template, request.itemLabel, request.pickupPlace, deadlineLabel)
+                    reminderInput.text?.clear()
+                }.onFailure {
+                    Toast.makeText(this, getString(R.string.parcel_geo_register_failed), Toast.LENGTH_LONG).show()
+                }
+            }
+        }.start()
+    }
+
     private fun handleWastePickupCommand(rawText: String): Boolean {
         val command = WastePickupCommandParser.extract(rawText) ?: return false
 
@@ -2790,3 +2877,10 @@ private data class StoreGeoRequest(
     val eventId: Long,
     val placeName: String
 )
+
+private data class ParcelGeoRequest(
+    val itemLabel: String,
+    val pickupPlace: String,
+    val deadlineAt: LocalDateTime
+)
+

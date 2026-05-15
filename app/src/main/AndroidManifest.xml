@@ -35,6 +35,10 @@
             android:exported="false" />
 
         <receiver
+            android:name=".parcel.ParcelPickupGeofenceBroadcastReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".medication.MedicationTakenReceiver"
             android:exported="false" />
 
