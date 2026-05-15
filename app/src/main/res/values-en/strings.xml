@@ -194,6 +194,13 @@
     <string name="expense_weekly_channel_description">Weekly spending reports</string>
     <string name="expense_weekly_notification_title">Lahimaksu Muistutus: weekly report</string>
     <string name="expense_weekly_notification_body">This week you spent %1$s EUR on restaurants. Total spending: %2$s EUR.</string>
+    <string name="waste_default_material">waste</string>
+    <string name="waste_channel_name">Roska-Paiva</string>
+    <string name="waste_channel_description">Evening-before reminders for waste pickup schedule</string>
+    <string name="waste_notification_title">Roska-Paiva</string>
+    <string name="waste_notification_body">Tomorrow they collect %1$s. Do not forget to roll the bin to the road.</string>
+    <string name="waste_scheduled">Roska-Paiva enabled: %1$s on %2$s, every %3$d week(s).</string>
+    <string name="waste_preview_template">Roska-Paiva: %1$s on %2$s, every %3$d week(s). I will remind you the evening before.</string>
     <string name="widget_voice_label">Voice</string>
     <string name="widget_voice_description">One tap to start voice input</string>
     <string name="widget_voice_content_description">Start voice input</string>

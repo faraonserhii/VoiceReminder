@@ -194,6 +194,13 @@
     <string name="expense_weekly_channel_description">Еженедельные отчеты по расходам</string>
     <string name="expense_weekly_notification_title">Lahimaksu Muistutus: недельный отчет</string>
     <string name="expense_weekly_notification_body">На этой неделе ты проел в ресторанах %1$s EUR. Общие расходы: %2$s EUR.</string>
+    <string name="waste_default_material">мусор</string>
+    <string name="waste_channel_name">Roska-Paiva</string>
+    <string name="waste_channel_description">Напоминания о вывозе мусора накануне вечером</string>
+    <string name="waste_notification_title">Roska-Paiva</string>
+    <string name="waste_notification_body">Завтра вывозят %1$s. Не забудь выкатить бак к дороге!</string>
+    <string name="waste_scheduled">Roska-Paiva включен: %1$s по %2$s, раз в %3$d нед.</string>
+    <string name="waste_preview_template">Roska-Paiva: %1$s по %2$s, раз в %3$d нед. Напомню накануне вечером.</string>
     <string name="widget_voice_label">Голос</string>
     <string name="widget_voice_description">Одно нажатие для запуска голосового ввода</string>
     <string name="widget_voice_content_description">Запустить голосовой ввод</string>

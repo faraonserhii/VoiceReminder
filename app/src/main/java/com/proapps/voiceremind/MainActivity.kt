@@ -67,6 +67,8 @@ import com.proapps.voiceremind.sauna.SaunaTimerCommandParser
 import com.proapps.voiceremind.sauna.SaunaTimerScheduler
 import com.proapps.voiceremind.sahko.SahkoVahtiCommandParser
 import com.proapps.voiceremind.sahko.SahkoVahtiScheduler
+import com.proapps.voiceremind.waste.WastePickupCommandParser
+import com.proapps.voiceremind.waste.WastePickupScheduler
 import com.proapps.voiceremind.messaging.MessageReminderNotifier
 import com.proapps.voiceremind.messaging.MessageReminderScheduler
 import com.proapps.voiceremind.security.SensitiveDataVault
@@ -305,6 +307,10 @@ class MainActivity : AppCompatActivity() {
             return@registerForActivityResult
         }
 
+        if (handleWastePickupCommand(spokenText)) {
+            return@registerForActivityResult
+        }
+
         if (handleExpenseLogCommand(spokenText)) {
             return@registerForActivityResult
         }
@@ -465,6 +471,10 @@ class MainActivity : AppCompatActivity() {
             }
 
             if (handleParkingControlCommand(text)) {
+                return@setOnClickListener
+            }
+
+            if (handleWastePickupCommand(text)) {
                 return@setOnClickListener
             }
 
@@ -670,6 +680,18 @@ class MainActivity : AppCompatActivity() {
             parsedPreview.text = getString(
                 R.string.parking_preview_template,
                 parkingCommand.expiresAt.toLocalTime().format(timeFormatter)
+            )
+            previewRouteButton.isEnabled = false
+            return
+        }
+
+        val wasteCommand = WastePickupCommandParser.extract(text)
+        if (wasteCommand != null) {
+            parsedPreview.text = getString(
+                R.string.waste_preview_template,
+                wasteCommand.materialLabel,
+                wasteCommand.dayOfWeek.name,
+                wasteCommand.intervalWeeks
             )
             previewRouteButton.isEnabled = false
             return
@@ -1867,6 +1889,34 @@ class MainActivity : AppCompatActivity() {
             Toast.LENGTH_LONG
         ).show()
         parsedPreview.text = getString(R.string.parking_preview_template, expiresAtText)
+        reminderInput.text?.clear()
+        return true
+    }
+
+    private fun handleWastePickupCommand(rawText: String): Boolean {
+        val command = WastePickupCommandParser.extract(rawText) ?: return false
+
+        WastePickupScheduler.schedule(
+            context = this,
+            command = command
+        )
+
+        Toast.makeText(
+            this,
+            getString(
+                R.string.waste_scheduled,
+                command.materialLabel,
+                command.dayOfWeek.name,
+                command.intervalWeeks
+            ),
+            Toast.LENGTH_LONG
+        ).show()
+        parsedPreview.text = getString(
+            R.string.waste_preview_template,
+            command.materialLabel,
+            command.dayOfWeek.name,
+            command.intervalWeeks
+        )
         reminderInput.text?.clear()
         return true
     }
