@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="drawer_icon_tint">#ECEFF1</color>
+    <color name="drawer_section_active_bg">#37474F</color>
+    <color name="background_soft">#10181F</color>
+</resources>
+

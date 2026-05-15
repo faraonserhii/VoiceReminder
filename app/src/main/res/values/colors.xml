@@ -5,4 +5,7 @@
     <color name="status_neutral">#757575</color>
     <color name="permission_status_granted">#2E7D32</color>
     <color name="permission_status_denied">#C62828</color>
+    <color name="background_soft">#F2F6FA</color>
+    <color name="drawer_icon_tint">#263238</color>
+    <color name="drawer_section_active_bg">#E3EEF9</color>
 </resources>
