@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widgetVoiceRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:padding="8dp"
+    android:background="@drawable/bg_widget_voice_mic">
+
+    <ImageView
+        android:id="@+id/widgetVoiceIcon"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:contentDescription="@string/widget_voice_content_description"
+        android:src="@drawable/ic_mic_24"
+        android:tint="@android:color/white" />
+
+    <TextView
+        android:id="@+id/widgetVoiceLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        android:text="@string/widget_voice_label" />
+
+</LinearLayout>
+
