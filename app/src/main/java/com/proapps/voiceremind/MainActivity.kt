@@ -58,6 +58,8 @@ import com.proapps.voiceremind.medication.MedicationReminderParser
 import com.proapps.voiceremind.medication.MedicationReminderScheduler
 import com.proapps.voiceremind.medication.MedicationLogShareHelper
 import com.proapps.voiceremind.medication.MedicationLogStore
+import com.proapps.voiceremind.parking.ParkingControlCommandParser
+import com.proapps.voiceremind.parking.ParkingControlScheduler
 import com.proapps.voiceremind.sauna.SaunaTimerCommandParser
 import com.proapps.voiceremind.sauna.SaunaTimerScheduler
 import com.proapps.voiceremind.sahko.SahkoVahtiCommandParser
@@ -296,6 +298,10 @@ class MainActivity : AppCompatActivity() {
             return@registerForActivityResult
         }
 
+        if (handleParkingControlCommand(spokenText)) {
+            return@registerForActivityResult
+        }
+
         updatePreview(spokenText)
 
         val prepared = parseReminderWithDomainFallback(spokenText)
@@ -448,6 +454,10 @@ class MainActivity : AppCompatActivity() {
             }
 
             if (handleSaunaTimerCommand(text)) {
+                return@setOnClickListener
+            }
+
+            if (handleParkingControlCommand(text)) {
                 return@setOnClickListener
             }
 
@@ -639,6 +649,16 @@ class MainActivity : AppCompatActivity() {
         val saunaCommand = SaunaTimerCommandParser.extract(text)
         if (saunaCommand != null) {
             parsedPreview.text = getString(R.string.sauna_timer_preview_template, saunaCommand.minutes)
+            previewRouteButton.isEnabled = false
+            return
+        }
+
+        val parkingCommand = ParkingControlCommandParser.extract(text)
+        if (parkingCommand != null) {
+            parsedPreview.text = getString(
+                R.string.parking_preview_template,
+                parkingCommand.expiresAt.toLocalTime().format(timeFormatter)
+            )
             previewRouteButton.isEnabled = false
             return
         }
@@ -1805,6 +1825,25 @@ class MainActivity : AppCompatActivity() {
             Toast.LENGTH_LONG
         ).show()
         parsedPreview.text = getString(R.string.sauna_timer_preview_template, command.minutes)
+        reminderInput.text?.clear()
+        return true
+    }
+
+    private fun handleParkingControlCommand(rawText: String): Boolean {
+        val command = ParkingControlCommandParser.extract(rawText) ?: return false
+
+        ParkingControlScheduler.schedule(
+            context = this,
+            expiresAt = command.expiresAt
+        )
+
+        val expiresAtText = command.expiresAt.toLocalTime().format(timeFormatter)
+        Toast.makeText(
+            this,
+            getString(R.string.parking_scheduled, expiresAtText, command.remindBeforeMinutes),
+            Toast.LENGTH_LONG
+        ).show()
+        parsedPreview.text = getString(R.string.parking_preview_template, expiresAtText)
         reminderInput.text?.clear()
         return true
     }

@@ -171,6 +171,12 @@
     <string name="sauna_notification_body">Час до сауни. Таймер на %1$d хвилин спрацював.</string>
     <string name="sauna_timer_scheduled">Sauna-Timer увімкнено: нагадаю через %1$d хв.</string>
     <string name="sauna_timer_preview_template">Sauna-Timer: спрацює через %1$d хв.</string>
+    <string name="parking_channel_name">Parking-Control</string>
+    <string name="parking_channel_description">Попередження перед завершенням паркування</string>
+    <string name="parking_notification_title">Parking-Control</string>
+    <string name="parking_notification_body">Час паркування закінчується о %1$s. Залишилось %2$d хвилин: повернись до авто або продовж оплату.</string>
+    <string name="parking_scheduled">Parking-Control увімкнено: паркування до %1$s, нагадаю за %2$d хвилин.</string>
+    <string name="parking_preview_template">Parking-Control: нагадаю за 10 хвилин до %1$s.</string>
     <string name="widget_voice_label">Голос</string>
     <string name="widget_voice_description">Одне натискання для запуску голосового вводу</string>
     <string name="widget_voice_content_description">Запустити голосовий ввід</string>

@@ -181,6 +181,12 @@
     <string name="sauna_notification_body">Пора в сауну. Таймер на %1$d минут сработал.</string>
     <string name="sauna_timer_scheduled">Sauna-Timer включен: напомню через %1$d мин.</string>
     <string name="sauna_timer_preview_template">Sauna-Timer: сработает через %1$d мин.</string>
+    <string name="parking_channel_name">Parking-Control</string>
+    <string name="parking_channel_description">Предупреждения перед окончанием парковки</string>
+    <string name="parking_notification_title">Парковка-контроль</string>
+    <string name="parking_notification_body">Время парковки истекает в %1$s. Осталось %2$d минут: пора к машине или продлить оплату.</string>
+    <string name="parking_scheduled">Парковка-контроль включен: парковка до %1$s, напомню за %2$d минут.</string>
+    <string name="parking_preview_template">Парковка-контроль: напомню за 10 минут до %1$s.</string>
     <string name="widget_voice_label">Голос</string>
     <string name="widget_voice_description">Одно нажатие для запуска голосового ввода</string>
     <string name="widget_voice_content_description">Запустить голосовой ввод</string>

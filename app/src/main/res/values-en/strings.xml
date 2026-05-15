@@ -181,6 +181,12 @@
     <string name="sauna_notification_body">Time for sauna. Your %1$d-minute timer is done.</string>
     <string name="sauna_timer_scheduled">Sauna-Timer started: I will remind you in %1$d min.</string>
     <string name="sauna_timer_preview_template">Sauna-Timer: will fire in %1$d min.</string>
+    <string name="parking_channel_name">Parking-Control</string>
+    <string name="parking_channel_description">Warnings before paid parking expires</string>
+    <string name="parking_notification_title">Parking-Control</string>
+    <string name="parking_notification_body">Parking expires at %1$s. %2$d minutes left: return to the car or extend payment.</string>
+    <string name="parking_scheduled">Parking-Control enabled: parking until %1$s, I will remind %2$d minutes earlier.</string>
+    <string name="parking_preview_template">Parking-Control: reminder 10 minutes before %1$s.</string>
     <string name="widget_voice_label">Voice</string>
     <string name="widget_voice_description">One tap to start voice input</string>
     <string name="widget_voice_content_description">Start voice input</string>
