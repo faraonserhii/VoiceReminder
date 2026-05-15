@@ -53,6 +53,9 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.proapps.voiceremind.geofence.StoreGeofenceManager
+import com.proapps.voiceremind.expenses.ExpenseLogCommandParser
+import com.proapps.voiceremind.expenses.ExpenseLogStore
+import com.proapps.voiceremind.expenses.ExpenseWeeklyReportScheduler
 import com.proapps.voiceremind.medication.MedicationReminderNotifier
 import com.proapps.voiceremind.medication.MedicationReminderParser
 import com.proapps.voiceremind.medication.MedicationReminderScheduler
@@ -302,6 +305,10 @@ class MainActivity : AppCompatActivity() {
             return@registerForActivityResult
         }
 
+        if (handleExpenseLogCommand(spokenText)) {
+            return@registerForActivityResult
+        }
+
         updatePreview(spokenText)
 
         val prepared = parseReminderWithDomainFallback(spokenText)
@@ -461,6 +468,10 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
+            if (handleExpenseLogCommand(text)) {
+                return@setOnClickListener
+            }
+
             val parsed = parseReminderWithDomainFallback(text)
 
             if (parsed == null) {
@@ -598,6 +609,7 @@ class MainActivity : AppCompatActivity() {
         updateDefaultReminderTimeUi()
         updateSahkoNightWindowUi()
         updateTireSettingsUi()
+        ExpenseWeeklyReportScheduler.ensureScheduled(this)
         markDrawerSectionActive(weatherFallbackRow)
         handleLaunchIntent(intent)
     }
@@ -658,6 +670,17 @@ class MainActivity : AppCompatActivity() {
             parsedPreview.text = getString(
                 R.string.parking_preview_template,
                 parkingCommand.expiresAt.toLocalTime().format(timeFormatter)
+            )
+            previewRouteButton.isEnabled = false
+            return
+        }
+
+        val expenseCommand = ExpenseLogCommandParser.extract(text)
+        if (expenseCommand != null) {
+            parsedPreview.text = getString(
+                R.string.expense_preview_template,
+                String.format(Locale.US, "%.2f", expenseCommand.amountEuro),
+                expenseCommand.note
             )
             previewRouteButton.isEnabled = false
             return
@@ -1844,6 +1867,23 @@ class MainActivity : AppCompatActivity() {
             Toast.LENGTH_LONG
         ).show()
         parsedPreview.text = getString(R.string.parking_preview_template, expiresAtText)
+        reminderInput.text?.clear()
+        return true
+    }
+
+    private fun handleExpenseLogCommand(rawText: String): Boolean {
+        val command = ExpenseLogCommandParser.extract(rawText) ?: return false
+
+        ExpenseLogStore.append(this, command)
+        ExpenseWeeklyReportScheduler.ensureScheduled(this)
+
+        val amountText = String.format(Locale.US, "%.2f", command.amountEuro)
+        Toast.makeText(
+            this,
+            getString(R.string.expense_logged_toast, amountText, command.note),
+            Toast.LENGTH_LONG
+        ).show()
+        parsedPreview.text = getString(R.string.expense_preview_template, amountText, command.note)
         reminderInput.text?.clear()
         return true
     }

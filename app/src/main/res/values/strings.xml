@@ -188,6 +188,12 @@
     <string name="parking_notification_body">Время парковки истекает в %1$s. Осталось %2$d минут: пора к машине или продлить оплату.</string>
     <string name="parking_scheduled">Парковка-контроль включен: парковка до %1$s, напомню за %2$d минут.</string>
     <string name="parking_preview_template">Парковка-контроль: напомню за 10 минут до %1$s.</string>
+    <string name="expense_logged_toast">Расход записан: %1$s EUR (%2$s)</string>
+    <string name="expense_preview_template">Lahimaksu Muistutus: записал расход %1$s EUR на "%2$s".</string>
+    <string name="expense_weekly_channel_name">Lahimaksu Muistutus</string>
+    <string name="expense_weekly_channel_description">Еженедельные отчеты по расходам</string>
+    <string name="expense_weekly_notification_title">Lahimaksu Muistutus: недельный отчет</string>
+    <string name="expense_weekly_notification_body">На этой неделе ты проел в ресторанах %1$s EUR. Общие расходы: %2$s EUR.</string>
     <string name="widget_voice_label">Голос</string>
     <string name="widget_voice_description">Одно нажатие для запуска голосового ввода</string>
     <string name="widget_voice_content_description">Запустить голосовой ввод</string>

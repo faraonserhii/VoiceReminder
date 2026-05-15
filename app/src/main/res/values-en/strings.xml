@@ -188,6 +188,12 @@
     <string name="parking_notification_body">Parking expires at %1$s. %2$d minutes left: return to the car or extend payment.</string>
     <string name="parking_scheduled">Parking-Control enabled: parking until %1$s, I will remind %2$d minutes earlier.</string>
     <string name="parking_preview_template">Parking-Control: reminder 10 minutes before %1$s.</string>
+    <string name="expense_logged_toast">Expense saved: %1$s EUR (%2$s)</string>
+    <string name="expense_preview_template">Lahimaksu Muistutus: logged %1$s EUR for "%2$s".</string>
+    <string name="expense_weekly_channel_name">Lahimaksu Muistutus</string>
+    <string name="expense_weekly_channel_description">Weekly spending reports</string>
+    <string name="expense_weekly_notification_title">Lahimaksu Muistutus: weekly report</string>
+    <string name="expense_weekly_notification_body">This week you spent %1$s EUR on restaurants. Total spending: %2$s EUR.</string>
     <string name="widget_voice_label">Voice</string>
     <string name="widget_voice_description">One tap to start voice input</string>
     <string name="widget_voice_content_description">Start voice input</string>
