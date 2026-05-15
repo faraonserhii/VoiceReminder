@@ -78,3 +78,19 @@
 .\gradlew.bat assembleDebug
 ```
 
+## Smoke для Sauna + Widget
+
+Build-only smoke (без `adb`):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\smoke_sauna_widget.ps1 -SkipAdb
+```
+
+Smoke с установкой и запуском через `adb`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\smoke_sauna_widget.ps1
+```
+
+Ручной сценарий проверки: `docs/sauna_widget_smoke_checklist.md`
+
