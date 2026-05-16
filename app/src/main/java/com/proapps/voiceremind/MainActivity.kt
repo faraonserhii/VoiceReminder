@@ -88,6 +88,8 @@ import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationServices
 
 private const val STATE_INPUT_TEXT = "state_input_text"
 private const val STATE_PENDING_TITLE = "state_pending_title"
@@ -185,6 +187,15 @@ class MainActivity : AppCompatActivity() {
     private var isAwaitingVoiceDecision: Boolean = false
     private var tts: TextToSpeech? = null
     private var isTtsReady: Boolean = false
+    private lateinit var fusedLocationClient: FusedLocationProviderClient
+    private var busAnnouncer: BusTimeAnnouncer? = null
+    private var pendingBusRouteQuery: String? = null
+    private lateinit var busRouteText: TextView
+    private lateinit var busStopText: TextView
+    private lateinit var busTimeText: TextView
+    private lateinit var busMinutesText: TextView
+    private lateinit var busRealtimeText: TextView
+    private lateinit var busProgress: View
 
     private val requestCalendarPermissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -266,10 +277,12 @@ class MainActivity : AppCompatActivity() {
         val granted = result.values.all { it }
         val pendingStore = pendingStoreGeoRequest
         val pendingParcel = pendingParcelGeoRequest
+        val pendingBus = pendingBusRouteQuery
 
-        if (!granted || (pendingStore == null && pendingParcel == null)) {
+        if (!granted || (pendingStore == null && pendingParcel == null && pendingBus == null)) {
             pendingStoreGeoRequest = null
             pendingParcelGeoRequest = null
+            pendingBusRouteQuery = null
             if (!granted) {
                 Toast.makeText(this, getString(R.string.parcel_geo_permission_required), Toast.LENGTH_LONG).show()
             }
@@ -280,6 +293,28 @@ class MainActivity : AppCompatActivity() {
         pendingParcelGeoRequest = null
         pendingStore?.let { registerStoreGeoReminder(it) }
         pendingParcel?.let { registerParcelGeoReminder(it) }
+
+        // handle pending bus route query if present
+        if (pendingBus != null) {
+            pendingBusRouteQuery = null
+                try {
+                fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
+                    if (loc != null) {
+                        busProgress.visibility = View.VISIBLE
+                        busAnnouncer?.announceNextBus(pendingBus, loc.latitude, loc.longitude) { departure ->
+                            displayBusDeparture(departure, pendingBus)
+                        }
+                    } else {
+                        val msg = "Не удалось получить местоположение."
+                        if (isTtsReady) tts?.speak(msg, TextToSpeech.QUEUE_FLUSH, null, "bus_query")
+                        else Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+                    }
+                }
+            } catch (e: Exception) {
+                val msg = "Не удалось получить местоположение."
+                if (isTtsReady) tts?.speak(msg, TextToSpeech.QUEUE_FLUSH, null, "bus_query")
+            }
+        }
     }
 
     private val speechLauncher = registerForActivityResult(
@@ -330,6 +365,10 @@ class MainActivity : AppCompatActivity() {
             return@registerForActivityResult
         }
 
+        if (handleBusTimeQuery(spokenText)) {
+            return@registerForActivityResult
+        }
+
         if (handleExpenseLogCommand(spokenText)) {
             return@registerForActivityResult
         }
@@ -374,9 +413,14 @@ class MainActivity : AppCompatActivity() {
         initTextToSpeech()
         enableEdgeToEdge()
         setContentView(R.layout.activity_main)
+        // init location client and bus announcer
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+        busAnnouncer = BusTimeAnnouncer(this)
 
         drawerLayout = findViewById(R.id.drawerLayout)
         openSettingsButton = findViewById(R.id.openSettingsButton)
+        val busQuickButton: ImageButton = findViewById(R.id.busQuickButton)
+        busQuickButton.setOnClickListener { showBusDialog() }
         openSettingsButton.setOnClickListener {
             if (drawerLayout.isDrawerOpen(GravityCompat.START)) {
                 drawerLayout.closeDrawer(GravityCompat.START)
@@ -425,6 +469,14 @@ class MainActivity : AppCompatActivity() {
         tirePolicyText = findViewById(R.id.tirePolicyText)
         tirePolicyButton = findViewById(R.id.tirePolicyButton)
         previewRouteButton = findViewById(R.id.previewRouteButton)
+        val busTimeButton: View = findViewById(R.id.busTimeButton)
+        busTimeButton.setOnClickListener { showBusDialog() }
+        busRouteText = findViewById(R.id.busRouteText)
+        busStopText = findViewById(R.id.busStopText)
+        busTimeText = findViewById(R.id.busTimeText)
+        busMinutesText = findViewById(R.id.busMinutesText)
+        busRealtimeText = findViewById(R.id.busRealtimeText)
+        busProgress = findViewById(R.id.busProgress)
         editPendingButton = findViewById(R.id.editPendingButton)
         clearDraftButton = findViewById(R.id.clearDraftButton)
         medicationExportLogButton = findViewById(R.id.medicationExportLogButton)
@@ -660,6 +712,8 @@ class MainActivity : AppCompatActivity() {
         tts?.stop()
         tts?.shutdown()
         tts = null
+        busAnnouncer?.shutdown()
+        busAnnouncer = null
         super.onDestroy()
     }
 
@@ -2012,6 +2066,241 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }.start()
+    }
+
+    private fun handleBusTimeQuery(rawText: String): Boolean {
+        val route = parseRouteNumberFromText(rawText) ?: return false
+
+        // we will try to obtain last known location; request permission if needed
+        val hasLocation = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+        // show quick UI feedback
+        parsedPreview.text = "Ищу следующий автобус $route..."
+
+        if (!hasLocation) {
+            pendingBusRouteQuery = route
+            // request location permission; reuse existing store geo permission flow
+            requestStoreGeoPermissions.launch(requiredStoreGeoPermissions())
+            Toast.makeText(this, "Требуется разрешение на местоположение для определения ближайшей остановки.", Toast.LENGTH_LONG).show()
+            return true
+        }
+
+        try {
+            fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
+                    if (loc != null) {
+                    busProgress.visibility = View.VISIBLE
+                    val router = selectRouterForLocation(loc.latitude, loc.longitude)
+                    busAnnouncer?.announceNextBus(route, loc.latitude, loc.longitude, router = router) { departure ->
+                        displayBusDeparture(departure, route)
+                    }
+                } else {
+                    // fallback: geocode configured fallback city
+                    parsedPreview.text = "Пытаюсь использовать город из настроек..."
+                    Thread {
+                        val client = OpenMeteoClient()
+                        val fallback = getWeatherFallbackCity()
+                        val point = client.geocode(fallback)
+                        if (point != null) {
+                            runOnUiThread { parsedPreview.text = "Использую $fallback для поиска" }
+                            val router = selectRouterForLocation(point.latitude, point.longitude)
+                            busProgress.visibility = View.VISIBLE
+                            busAnnouncer?.announceNextBus(route, point.latitude, point.longitude, router = router) { departure ->
+                                displayBusDeparture(departure, route)
+                            }
+                        } else {
+                            val msg = "Не удалось определить координаты для $fallback."
+                            runOnUiThread {
+                                if (isTtsReady) tts?.speak(msg, TextToSpeech.QUEUE_FLUSH, null, "bus_query")
+                                else Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }.start()
+                }
+            }
+        } catch (e: Exception) {
+            val msg = "Ошибка получения местоположения."
+            if (isTtsReady) tts?.speak(msg, TextToSpeech.QUEUE_FLUSH, null, "bus_query")
+        }
+
+        return true
+    }
+
+    private fun showBusDialog() {
+        val input = EditText(this).apply {
+            hint = getString(R.string.bus_time_dialog_hint)
+            setText(pendingBusRouteQuery ?: "")
+        }
+
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.bus_time_dialog_title)
+            .setView(input)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(R.string.bus_time_dialog_ok, null)
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val route = input.text?.toString()?.trim()?.replace("[^0-9]".toRegex(), "")
+                if (route.isNullOrBlank()) {
+                    input.error = getString(R.string.bus_time_dialog_hint)
+                    return@setOnClickListener
+                }
+
+                dialog.dismiss()
+                // reuse handler logic
+                pendingBusRouteQuery = null
+                // ensure permission and perform lookup
+                val hasLocation = ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.ACCESS_FINE_LOCATION
+                ) == PackageManager.PERMISSION_GRANTED
+
+                if (!hasLocation) {
+                    pendingBusRouteQuery = route
+                    requestStoreGeoPermissions.launch(requiredStoreGeoPermissions())
+                    Toast.makeText(this, "Требуется разрешение на местоположение", Toast.LENGTH_LONG).show()
+                    return@setOnClickListener
+                }
+
+                fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
+                    if (loc != null) {
+                        // select router by proximity
+                        busProgress.visibility = View.VISIBLE
+                        val router = selectRouterForLocation(loc.latitude, loc.longitude)
+                        busAnnouncer?.announceNextBus(route, loc.latitude, loc.longitude, router = router) { departure ->
+                            displayBusDeparture(departure, route)
+                        }
+                    } else {
+                        // fallback geocode
+                        Thread {
+                            val client = OpenMeteoClient()
+                            val fallback = getWeatherFallbackCity()
+                            val point = client.geocode(fallback)
+                            if (point != null) {
+                                busProgress.visibility = View.VISIBLE
+                                busAnnouncer?.announceNextBus(route, point.latitude, point.longitude, router = selectRouterForLocation(point.latitude, point.longitude)) { departure ->
+                                    displayBusDeparture(departure, route)
+                                }
+                            } else {
+                                val msg = "Не удалось определить координаты для $fallback."
+                                runOnUiThread {
+                                    if (isTtsReady) tts?.speak(msg, TextToSpeech.QUEUE_FLUSH, null, "bus_query")
+                                    else Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }.start()
+                    }
+                }
+            }
+        }
+
+        dialog.show()
+    }
+
+    private fun selectRouterForLocation(lat: Double, lon: Double): String {
+        // First try bounding-box checks for known operator regions (faster and more reliable than plain distance)
+        // HSL (Greater Helsinki) approximate bbox
+        val hslMinLat = 59.8
+        val hslMaxLat = 60.6
+        val hslMinLon = 23.5
+        val hslMaxLon = 26.0
+        if (lat in hslMinLat..hslMaxLat && lon in hslMinLon..hslMaxLon) return "hsl"
+
+        // Föli (Turku) approximate bbox
+        val turkuMinLat = 60.25
+        val turkuMaxLat = 60.6
+        val turkuMinLon = 21.8
+        val turkuMaxLon = 22.6
+        if (lat in turkuMinLat..turkuMaxLat && lon in turkuMinLon..turkuMaxLon) return "turku"
+
+        // Fallback to simple proximity to Helsinki vs Turku
+        fun sqr(x: Double) = x * x
+        val helsinkiLat = 60.1699
+        val helsinkiLon = 24.9384
+        val turkuLat = 60.4518
+        val turkuLon = 22.2666
+        val dH = sqr(lat - helsinkiLat) + sqr(lon - helsinkiLon)
+        val dT = sqr(lat - turkuLat) + sqr(lon - turkuLon)
+        return if (dH <= dT) "hsl" else "turku"
+    }
+
+    private fun parseRouteNumberFromText(text: String): String? {
+        // 1) digits first
+        Regex("\\d{1,4}").find(text)?.let { return it.value }
+
+        // try words -> number (Russian support)
+        WordsToNumber.parseNumber(text)?.let { return it.toString() }
+
+        // 2) Russian words for common hundreds (сто..девятьсот)
+        val ruHundreds = mapOf(
+            "сто" to 100,
+            "двести" to 200,
+            "триста" to 300,
+            "четыреста" to 400,
+            "пятьсот" to 500,
+            "шестьсот" to 600,
+            "семьсот" to 700,
+            "восемьсот" to 800,
+            "девятьсот" to 900
+        )
+        ruHundreds.forEach { (word, value) ->
+            if (text.contains(word, ignoreCase = true)) return value.toString()
+            // ordinal forms: "шестисотый" etc.
+            if (text.contains(word.replace("о", "о"), ignoreCase = true) && text.contains("ый", ignoreCase = true)) return value.toString()
+        }
+
+        // 3) Finnish: try forms like "kuusi sata" or "kuusi sataa" -> 600
+        val fiUnits = mapOf(
+            "yksi" to 1, "kaksi" to 2, "kolme" to 3, "nelja" to 4, "neljä" to 4,
+            "viisi" to 5, "kuusi" to 6, "seitsemän" to 7, "kahdeksan" to 8, "yhdeksän" to 9
+        )
+        // if text contains e.g. "kuusi" and "sata" -> 600
+        fiUnits.forEach { (w, n) ->
+            if (text.contains(w, ignoreCase = true) && text.contains("sata", ignoreCase = true)) return (n * 100).toString()
+        }
+
+        // 4) fallback: look for words for exact hundreds in Finnish like "sata" (100) or "kaksisataa" (200)
+        val fiHundreds = mapOf(
+            "sata" to 100,
+            "kaksisataa" to 200,
+            "kolmesataa" to 300,
+            "neljasataa" to 400,
+            "viisisataa" to 500,
+            "kuusisataa" to 600,
+            "seitsemansataa" to 700,
+            "kahdeksansataa" to 800,
+            "yhdeksansataa" to 900
+        )
+        fiHundreds.forEach { (w, v) -> if (text.contains(w, ignoreCase = true)) return v.toString() }
+
+        return null
+    }
+
+    private fun displayBusDeparture(departure: BusDeparture?, route: String) {
+        // hide loading indicator
+        busProgress.visibility = View.GONE
+
+        if (departure == null) {
+            busRouteText.text = "Маршрут $route"
+            busStopText.text = "Рейсов не найдено"
+            busTimeText.text = ""
+            busMinutesText.text = ""
+            busRealtimeText.text = ""
+            return
+        }
+
+        busRouteText.text = "Маршрут ${departure.route}"
+        busStopText.text = "Остановка: ${departure.stopName}"
+        val dt = Instant.ofEpochMilli(departure.departureEpochMillis)
+            .atZone(ZoneId.systemDefault())
+            .toLocalTime()
+            .format(timeFormatter)
+        busTimeText.text = "Отправление: $dt"
+        busMinutesText.text = if (departure.minutesUntil == 0) "Сейчас" else "Через ${departure.minutesUntil} мин"
+        busRealtimeText.text = if (departure.realtime) "Данные: в реальном времени" else "Данные: расписание"
     }
 
     private fun handleWastePickupCommand(rawText: String): Boolean {

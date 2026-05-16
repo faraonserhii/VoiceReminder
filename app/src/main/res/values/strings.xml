@@ -199,6 +199,23 @@
     <string name="parcel_geo_register_failed">Не удалось включить Posti-Nouto напоминание</string>
     <string name="parcel_geo_armed">Posti-Nouto включен: "%1$s" из %2$s до %3$s</string>
     <string name="parcel_preview_template">Posti-Nouto: "%1$s" из %2$s до %3$s. Напомню, когда будешь рядом.</string>
+    <string name="bus_time_button">Bussi‑Aika: Спросить автобус</string>
+    <string name="bus_time_dialog_title">Bussi‑Aika: номер маршрута</string>
+    <string name="bus_time_dialog_hint">Например: 600</string>
+    <string name="bus_time_dialog_ok">Найти</string>
+    <string name="bus_time_not_found">Не найден ближайший рейс маршрута %1$s рядом с указанными координатами.</string>
+    <string name="bus_time_now">прямо сейчас</string>
+    <string name="bus_time_one">через минуту</string>
+    <plurals name="minutes_until">
+        <item quantity="one">через %d минуту</item>
+        <item quantity="few">через %d минуты</item>
+        <item quantity="many">через %d минут</item>
+        <item quantity="other">через %d минут</item>
+    </plurals>
+    <string name="bus_headsign_prefix">в направлении %1$s </string>
+    <string name="bus_realtime_note"> (реально)</string>
+    <string name="bus_time_template">Следующий автобус %1$s %2$sна остановке %3$s %4$s%5$s.</string>
+    <string name="bus_searching">Ищу ближайший рейс...</string>
     <string name="expense_logged_toast">Расход записан: %1$s EUR (%2$s)</string>
     <string name="expense_preview_template">Lahimaksu Muistutus: записал расход %1$s EUR на "%2$s".</string>
     <string name="expense_weekly_channel_name">Lahimaksu Muistutus</string>

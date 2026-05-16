@@ -50,6 +50,8 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.10.1")
     implementation("com.google.mlkit:text-recognition:16.0.1")
     implementation("com.google.android.gms:play-services-location:21.3.0")
+    // HTTP client for Bussi-Aika (Digitransit) requests
+    implementation("com.squareup.okhttp3:okhttp:4.11.0")
     testImplementation(libs.junit)
     testImplementation("androidx.test:core:1.6.1")
     testImplementation("org.robolectric:robolectric:4.16")
