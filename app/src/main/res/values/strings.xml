@@ -216,6 +216,11 @@
     <string name="bus_realtime_note"> (реально)</string>
     <string name="bus_time_template">Следующий автобус %1$s %2$sна остановке %3$s %4$s%5$s.</string>
     <string name="bus_searching">Ищу ближайший рейс...</string>
+    <string name="bus_schedule_unsupported_country">В этой стране (%1$s) расписания через Digitransit не поддерживаются. Нашёл ближайшую остановку: %2$s.</string>
+    <string name="bus_schedule_unsupported_no_stop">В этой стране (%1$s) расписания через Digitransit не поддерживаются и ближайшую остановку не удалось найти.</string>
+    <string name="bus_time_error_generic">Ошибка получения расписания: %1$s</string>
+    <string name="bus_no_stop_found_label">остановка</string>
+    <string name="bus_schedule_unsupported_note">Расписания для данного региона пока не поддерживаются.</string>
     <string name="expense_logged_toast">Расход записан: %1$s EUR (%2$s)</string>
     <string name="expense_preview_template">Lahimaksu Muistutus: записал расход %1$s EUR на "%2$s".</string>
     <string name="expense_weekly_channel_name">Lahimaksu Muistutus</string>

@@ -2143,7 +2143,8 @@ class MainActivity : AppCompatActivity() {
 
         dialog.setOnShowListener {
             dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val route = input.text?.toString()?.trim()?.replace("[^0-9]".toRegex(), "")
+                // allow alphanumeric route ids (e.g. "600A") — do not strip letters here
+                val route = input.text?.toString()?.trim()
                 if (route.isNullOrBlank()) {
                     input.error = getString(R.string.bus_time_dialog_hint)
                     return@setOnClickListener
@@ -2231,6 +2232,9 @@ class MainActivity : AppCompatActivity() {
         // 1) digits first
         Regex("\\d{1,4}").find(text)?.let { return it.value }
 
+        // 1b) alphanumeric tokens containing at least one digit (e.g. 600A, 12B)
+        Regex("(?i)\\b(?=.*\\d)[0-9\\p{L}-]{1,6}\\b").find(text)?.let { return it.value }
+
         // try words -> number (Russian support)
         WordsToNumber.parseNumber(text)?.let { return it.toString() }
 
@@ -2294,6 +2298,15 @@ class MainActivity : AppCompatActivity() {
 
         busRouteText.text = "Маршрут ${departure.route}"
         busStopText.text = "Остановка: ${departure.stopName}"
+
+        if (departure.minutesUntil < 0) {
+            // synthetic departure: we couldn't fetch schedule for this country/provider
+            busTimeText.text = getString(R.string.bus_schedule_unsupported_note)
+            busMinutesText.text = ""
+            busRealtimeText.text = ""
+            return
+        }
+
         val dt = Instant.ofEpochMilli(departure.departureEpochMillis)
             .atZone(ZoneId.systemDefault())
             .toLocalTime()

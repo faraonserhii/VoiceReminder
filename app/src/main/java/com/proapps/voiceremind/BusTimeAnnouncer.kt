@@ -11,6 +11,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import com.proapps.voiceremind.transport.DigitransitProvider
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
@@ -22,14 +23,6 @@ import java.util.Locale
  * Небольшой helper для запроса ближайшего рейса через Digitransit GraphQL и проговаривания через TTS.
  * Минимальная, sync-реализация: сетевой вызов выполняется в фоновом потоке, результат проговаривается на UI-потоке.
  */
-data class BusDeparture(
-    val route: String,
-    val stopName: String,
-    val headsign: String?,
-    val departureEpochMillis: Long,
-    val minutesUntil: Int,
-    val realtime: Boolean
-)
 
 class BusTimeAnnouncer(private val context: Context) : TextToSpeech.OnInitListener {
 
@@ -69,57 +62,35 @@ class BusTimeAnnouncer(private val context: Context) : TextToSpeech.OnInitListen
     ) {
         Thread {
             try {
-                val endpoint = "https://api.digitransit.fi/routing/v1/routers/$router/index/graphql"
-
-                val query = """
-                    query(${"\$"}lat: Float!, ${"\$"}lon: Float!, ${"\$"}radius: Int!, ${"\$"}numDepartures: Int!) {
-                      stopsByRadius(lat: ${"\$"}lat, lon: ${"\$"}lon, radius: ${"\$"}radius) {
-                        edges {
-                          node {
-                            stop {
-                              id
-                              name
-                              lat
-                              lon
-                              stoptimesWithoutPatterns(numberOfDepartures: ${"\$"}numDepartures) {
-                                scheduledDeparture
-                                realtimeDeparture
-                                realtime
-                                headsign
-                                trip { route { shortName } }
-                              }
-                            }
-                            distance
-                          }
-                        }
-                      }
+                // First, detect country for the coordinates. If not Finland, fall back to a generic Overpass lookup
+                val country = detectCountryCode(lat, lon)
+                if (country == null) {
+                    // couldn't detect country, proceed with digitransit for best effort
+                } else if (!country.equals("FI", ignoreCase = true)) {
+                    // Try to find nearest stop via Overpass and inform user that schedule provider is not available
+                    val stopName = findNearestStopOverpass(lat, lon, radiusMeters)
+                    val message = if (stopName != null) {
+                        context.getString(R.string.bus_schedule_unsupported_country, country, stopName)
+                    } else {
+                        context.getString(R.string.bus_schedule_unsupported_no_stop, country)
                     }
-                """.trimIndent()
-
-                val variables = JSONObject().apply {
-                    put("lat", lat)
-                    put("lon", lon)
-                    put("radius", radiusMeters)
-                    put("numDepartures", 6)
+                    // Notify UI with a synthetic BusDeparture marking unsupported schedule (minutesUntil = -1)
+                    val synthetic = BusDeparture(
+                        route = routeNumber,
+                        stopName = stopName ?: context.getString(R.string.bus_no_stop_found_label),
+                        headsign = null,
+                        departureEpochMillis = 0L,
+                        minutesUntil = -1,
+                        realtime = false
+                    )
+                    resultCallback?.let { cb -> mainHandler.post { cb(synthetic) } }
+                    speakOnMain(message)
+                    return@Thread
                 }
 
-                val bodyJson = JSONObject()
-                    .put("query", query)
-                    .put("variables", variables)
-                    .toString()
-
-                val mediaType = "application/json; charset=utf-8".toMediaType()
-                val request = Request.Builder()
-                    .url(endpoint)
-                    .post(bodyJson.toRequestBody(mediaType))
-                    .build()
-
-                val respStr = client.newCall(request).execute().use { resp ->
-                    if (!resp.isSuccessful) throw RuntimeException("HTTP ${resp.code}")
-                    resp.body?.string() ?: throw RuntimeException("Empty response")
-                }
-
-                val departure = parseBestDeparture(respStr, routeNumber)
+                // use Digitransit provider for supported regions (router param allows selecting router)
+                val provider = DigitransitProvider(router)
+                val departure = provider.findNextDeparture(routeNumber, lat, lon, radiusMeters)
                 // notify caller (UI) on main thread with structured result
                 resultCallback?.let { cb ->
                     mainHandler.post { cb(departure) }
@@ -129,60 +100,69 @@ class BusTimeAnnouncer(private val context: Context) : TextToSpeech.OnInitListen
                 speakOnMain(speech)
             } catch (e: Exception) {
                 Log.e("BusTimeAnnouncer", "failed", e)
-                speakOnMain("Ошибка получения расписания: ${e.message}")
+                speakOnMain(context.getString(R.string.bus_time_error_generic, e.message ?: ""))
             }
         }.start()
     }
 
-    private fun parseBestDeparture(jsonText: String, routeNumber: String): BusDeparture? {
-        val root = JSONObject(jsonText)
-        val data = root.optJSONObject("data") ?: return null
-        val stopsByRadius = data.optJSONObject("stopsByRadius") ?: return null
+    private fun detectCountryCode(lat: Double, lon: Double): String? {
+        return try {
+            val url = "https://geocoding-api.open-meteo.com/v1/reverse?latitude=$lat&longitude=$lon&count=1"
+            val request = Request.Builder().url(url).get().build()
+            client.newCall(request).execute().use { resp ->
+                if (!resp.isSuccessful) return null
+                val body = resp.body?.string() ?: return null
+                val root = JSONObject(body)
+                val results = root.optJSONArray("results") ?: return null
+                if (results.length() == 0) return null
+                val obj = results.getJSONObject(0)
+                obj.optString("country_code").ifBlank { null }
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
 
-        val edges = stopsByRadius.optJSONArray("edges") ?: JSONArray()
-        var best: BusDeparture? = null
+    private fun findNearestStopOverpass(lat: Double, lon: Double, radius: Int): String? {
+        return try {
+            val q = """
+                [out:json][timeout:25];
+                (
+                  node(around:$radius,$lat,$lon)["highway"="bus_stop"];
+                  node(around:$radius,$lat,$lon)["public_transport"="platform"];
+                );
+                out body 1;
+            """.trimIndent()
 
-        for (i in 0 until edges.length()) {
-            val node = edges.getJSONObject(i).optJSONObject("node") ?: continue
-            val stop = node.optJSONObject("stop") ?: continue
-            val stopName = stop.optString("name")
-            val stoptimes = stop.optJSONArray("stoptimesWithoutPatterns") ?: JSONArray()
+            val mediaType = "text/plain; charset=utf-8".toMediaType()
+            val request = Request.Builder()
+                .url("https://overpass-api.de/api/interpreter")
+                .post(q.toRequestBody(mediaType))
+                .build()
 
-            for (j in 0 until stoptimes.length()) {
-                val st = stoptimes.getJSONObject(j)
-                val trip = st.optJSONObject("trip")
-                val route = trip?.optJSONObject("route")
-                val shortName = route?.optString("shortName") ?: ""
-                if (shortName == routeNumber) {
-                    val realtime = st.optBoolean("realtime", false)
-                    val depSeconds = if (realtime && st.has("realtimeDeparture")) st.optInt("realtimeDeparture") else st.optInt("scheduledDeparture")
-
-                    val nowZ = Instant.now().atZone(ZoneId.systemDefault())
-                    val midnight = nowZ.toLocalDate().atStartOfDay(nowZ.zone)
-                    var depInstant = midnight.plusSeconds(depSeconds.toLong())
-                    var minutesUntil = Duration.between(nowZ.toLocalDateTime(), depInstant.toLocalDateTime()).toMinutes().toInt()
-                    if (minutesUntil < 0) minutesUntil += 24 * 60
-
-                    val epochMillis = depInstant.toInstant().toEpochMilli()
-
-                    val candidate = BusDeparture(
-                        route = routeNumber,
-                        stopName = stopName,
-                        headsign = st.optString("headsign").ifBlank { null },
-                        departureEpochMillis = epochMillis,
-                        minutesUntil = minutesUntil,
-                        realtime = realtime
-                    )
-
-                    if (best == null || candidate.minutesUntil < best.minutesUntil) {
-                        best = candidate
+            client.newCall(request).execute().use { resp ->
+                if (!resp.isSuccessful) return null
+                val body = resp.body?.string() ?: return null
+                val root = JSONObject(body)
+                val elements = root.optJSONArray("elements") ?: return null
+                if (elements.length() == 0) return null
+                for (i in 0 until elements.length()) {
+                    val el = elements.getJSONObject(i)
+                    val tags = el.optJSONObject("tags")
+                    if (tags != null) {
+                        val name = tags.optString("name")
+                        if (!name.isNullOrBlank()) return name
                     }
                 }
+                null
             }
+        } catch (e: Exception) {
+            Log.w("BusTimeAnnouncer", "overpass failed", e)
+            null
         }
-
-        return best
     }
+
+    // parsing of Digitransit responses is handled inside provider implementations
 
     private fun speechFromDeparture(departure: BusDeparture?, routeNumber: String): String {
         if (departure == null) return context.getString(R.string.bus_time_not_found, routeNumber)

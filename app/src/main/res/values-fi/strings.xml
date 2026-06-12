@@ -1,0 +1,26 @@
+<resources>
+    <string name="app_name">VoiceRemind</string>
+    <string name="bus_time_button">Bussi‑Aika: Kysy bussia</string>
+    <string name="bus_time_dialog_title">Bussi‑Aika: reitin numero</string>
+    <string name="bus_time_dialog_hint">esim. 600</string>
+    <string name="bus_time_dialog_ok">Etsi</string>
+    <string name="bus_time_not_found">Lähimpiä vuoroja reitille %1$s ei löytynyt annetuista koordinaateista.</string>
+    <string name="bus_time_now">juuri nyt</string>
+    <string name="bus_time_one">yhdessä minuutissa</string>
+    <plurals name="minutes_until">
+        <item quantity="one">%d minuutin päästä</item>
+        <item quantity="other">%d minuutin päästä</item>
+    </plurals>
+    <string name="bus_headsign_prefix">suuntaan %1$s </string>
+    <string name="bus_realtime_note"> (reaaliaika)</string>
+    <string name="bus_time_template">Seuraava bussi %1$s %2$spysäkiltä %3$s %4$s%5$s.</string>
+    <string name="bus_schedule_unsupported_country">Digitransit‑aikatauluja ei tueta maassa %1$s. Löydetty lähin pysäkki: %2$s.</string>
+    <string name="bus_schedule_unsupported_no_stop">Digitransit‑aikatauluja ei tueta maassa %1$s eikä lähintä pysäkkiä löytynyt.</string>
+    <string name="bus_time_error_generic">Aikataulun haku epäonnistui: %1$s</string>
+    <string name="bus_no_stop_found_label">pysäkki</string>
+    <string name="bus_schedule_unsupported_note">Tämän alueen aikatauluja ei tueta vielä.</string>
+    <string name="bus_searching">Etsitään seuraavaa vuoroa...</string>
+    <string name="language_dialog_title">Sovelluksen kieli</string>
+    <string name="language_system">Järjestelmän oletus</string>
+    <string name="language_english">English</string>
+</resources>

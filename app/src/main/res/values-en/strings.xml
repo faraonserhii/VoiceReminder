@@ -199,6 +199,26 @@
     <string name="parcel_geo_register_failed">Failed to enable Posti-Nouto reminder</string>
     <string name="parcel_geo_armed">Posti-Nouto enabled: "%1$s" from %2$s until %3$s</string>
     <string name="parcel_preview_template">Posti-Nouto: "%1$s" from %2$s until %3$s. I will remind you when you are nearby.</string>
+    <string name="bus_time_button">Bussi‑Aika: Ask bus</string>
+    <string name="bus_time_dialog_title">Bussi‑Aika: route number</string>
+    <string name="bus_time_dialog_hint">e.g. 600</string>
+    <string name="bus_time_dialog_ok">Find</string>
+    <string name="bus_time_not_found">No nearby departures found for route %1$s at these coordinates.</string>
+    <string name="bus_time_now">right now</string>
+    <string name="bus_time_one">in one minute</string>
+    <plurals name="minutes_until">
+        <item quantity="one">in %d minute</item>
+        <item quantity="other">in %d minutes</item>
+    </plurals>
+    <string name="bus_headsign_prefix">towards %1$s </string>
+    <string name="bus_realtime_note"> (realtime)</string>
+    <string name="bus_time_template">Next bus %1$s %2$sat stop %3$s %4$s%5$s.</string>
+    <string name="bus_schedule_unsupported_country">Transit schedules via Digitransit are not supported in %1$s. Nearest stop found: %2$s.</string>
+    <string name="bus_schedule_unsupported_no_stop">Transit schedules via Digitransit are not supported in %1$s and a nearby stop could not be found.</string>
+    <string name="bus_time_error_generic">Schedule error: %1$s</string>
+    <string name="bus_no_stop_found_label">stop</string>
+    <string name="bus_schedule_unsupported_note">Schedules for this region are not supported yet.</string>
+    <string name="bus_searching">Searching for next departure...</string>
     <string name="expense_logged_toast">Expense saved: %1$s EUR (%2$s)</string>
     <string name="expense_preview_template">Lahimaksu Muistutus: logged %1$s EUR for "%2$s".</string>
     <string name="expense_weekly_channel_name">Lahimaksu Muistutus</string>

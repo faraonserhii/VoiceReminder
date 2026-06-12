@@ -177,5 +177,76 @@ object WordsToNumber {
         val fiResult = fiTotal + fiCurrent
         return if (fiSeen && fiResult in 0..9999) fiResult else null
     }
+
+    // English parsing (basic, supports up to 9999: "one thousand two hundred thirty four")
+    private fun parseEnglish(cleaned: String): Int? {
+        if (cleaned.isBlank()) return null
+
+        // tokenize, keep alphabetic and digits
+        val tokens = cleaned.split(Regex("[\\s-]+"))
+
+        val unitsEN = mapOf(
+            "zero" to 0, "one" to 1, "two" to 2, "three" to 3, "four" to 4, "five" to 5,
+            "six" to 6, "seven" to 7, "eight" to 8, "nine" to 9
+        )
+        val teensEN = mapOf(
+            "ten" to 10, "eleven" to 11, "twelve" to 12, "thirteen" to 13, "fourteen" to 14,
+            "fifteen" to 15, "sixteen" to 16, "seventeen" to 17, "eighteen" to 18, "nineteen" to 19
+        )
+        val tensEN = mapOf(
+            "twenty" to 20, "thirty" to 30, "forty" to 40, "fifty" to 50,
+            "sixty" to 60, "seventy" to 70, "eighty" to 80, "ninety" to 90
+        )
+
+        var total = 0
+        var current = 0
+        var seen = false
+
+        for (raw in tokens) {
+            val t = raw.trim().lowercase()
+            if (t.isEmpty()) continue
+            when {
+                t == "thousand" || t == "thousands" -> {
+                    val mult = if (current == 0) 1 else current
+                    total += mult * 1000
+                    current = 0
+                    seen = true
+                }
+
+                t == "hundred" || t == "hundreds" -> {
+                    if (current == 0) current = 1
+                    current = current * 100
+                    seen = true
+                }
+
+                tensEN.containsKey(t) -> {
+                    current += tensEN[t] ?: 0
+                    seen = true
+                }
+
+                teensEN.containsKey(t) -> {
+                    current += teensEN[t] ?: 0
+                    seen = true
+                }
+
+                unitsEN.containsKey(t) -> {
+                    current += unitsEN[t] ?: 0
+                    seen = true
+                }
+
+                // digits spelled inside tokens
+                t.matches(Regex("\\d{1,4}")) -> {
+                    return t.toIntOrNull()
+                }
+
+                else -> {
+                    // unknown token - skip
+                }
+            }
+        }
+
+        val result = total + current
+        return if (seen && result in 0..9999) result else null
+    }
 }
 
