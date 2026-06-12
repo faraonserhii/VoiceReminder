@@ -98,8 +98,10 @@ class TransitLandProvider : TransportProvider {
                                             for ((secs, tripId) in times) {
                                                 val epoch = GTFSParser.secondsTodayToEpochMillis(secs)
                                                 if (epoch >= nowMs) {
-                                                    val trip = feed.trips[tripId]
-                                                    val route = trip?.routeId?.let { feed.routes[it] }
+                                                        val trip = feed.trips[tripId]
+                                                            // ensure trip's service is active today (if known)
+                                                            if (trip?.serviceId != null && !feed.activeServiceIds.contains(trip.serviceId)) continue
+                                                            val route = trip?.routeId?.let { feed.routes[it] }
                                                     val routeMatches = when {
                                                         route?.shortName != null -> route.shortName.equals(routeNumber, ignoreCase = true) || route.shortName.contains(routeNumber, ignoreCase = true)
                                                         trip?.headsign != null -> trip.headsign.contains(routeNumber, ignoreCase = true)
@@ -139,6 +141,7 @@ class TransitLandProvider : TransportProvider {
                                             if (epoch >= nowMs) {
                                                 // route matching: check route short name or trip headsign
                                                 val trip = feed.trips[tripId]
+                                                if (trip?.serviceId != null && !feed.activeServiceIds.contains(trip.serviceId)) continue
                                                 val route = trip?.routeId?.let { feed.routes[it] }
                                                 val routeMatches = when {
                                                     route?.shortName != null -> route.shortName.equals(routeNumber, ignoreCase = true) || route.shortName.contains(routeNumber, ignoreCase = true)

@@ -8,7 +8,8 @@ data class GTFSStop(
 data class GTFSTrip(
     val tripId: String,
     val routeId: String,
-    val headsign: String?
+    val headsign: String?,
+    val serviceId: String?
 )
 
 data class GTFSRoute(
@@ -22,6 +23,8 @@ data class GTFSFeed(
     val routes: Map<String, GTFSRoute>,
     val trips: Map<String, GTFSTrip>,
     // stop_id -> list of pair(departureSeconds, tripId)
-    val stopTimes: Map<String, List<Pair<Int, String>>>
+    val stopTimes: Map<String, List<Pair<Int, String>>>,
+    // set of active service_ids for the parsed date (best-effort)
+    val activeServiceIds: Set<String>
 )
 
