@@ -75,6 +75,63 @@ class ReminderParser(
         "dec" to 12
     )
 
+    // Spanish months
+    private val esMonths = mapOf(
+        "enero" to 1,
+        "ene" to 1,
+        "febrero" to 2,
+        "feb" to 2,
+        "marzo" to 3,
+        "mar" to 3,
+        "abril" to 4,
+        "abr" to 4,
+        "mayo" to 5,
+        "junio" to 6,
+        "jun" to 6,
+        "julio" to 7,
+        "jul" to 7,
+        "agosto" to 8,
+        "ago" to 8,
+        "septiembre" to 9,
+        "sep" to 9,
+        "octubre" to 10,
+        "oct" to 10,
+        "noviembre" to 11,
+        "nov" to 11,
+        "diciembre" to 12,
+        "dic" to 12
+    )
+
+    // German months (include common forms without diacritics too)
+    private val deMonths = mapOf(
+        "januar" to 1,
+        "jan" to 1,
+        "februar" to 2,
+        "feb" to 2,
+        "märz" to 3,
+        "marz" to 3,
+        "mär" to 3,
+        "mar" to 3,
+        "april" to 4,
+        "apr" to 4,
+        "mai" to 5,
+        "juni" to 6,
+        "jun" to 6,
+        "juli" to 7,
+        "jul" to 7,
+        "august" to 8,
+        "aug" to 8,
+        "september" to 9,
+        "sep" to 9,
+        "oktober" to 10,
+        "okt" to 10,
+        "november" to 11,
+        "nov" to 11,
+        "dezember" to 12,
+        "dez" to 12,
+        "dec" to 12
+    )
+
     private val ruDateRegex = Regex("""(\d{1,2})\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря|янв\.?|фев\.?|мар\.?|апр\.?|июн\.?|июл\.?|авг\.?|сент\.?|сен\.?|окт\.?|ноя\.?|дек\.?)(?:\s+(\d{4}))?""", RegexOption.IGNORE_CASE)
     private val enDateRegex = Regex(
         """(january|february|march|april|may|june|july|august|september|october|november|december|jan\.?|feb\.?|mar\.?|apr\.?|jun\.?|jul\.?|aug\.?|sep\.?|sept\.?|oct\.?|nov\.?|dec\.?)\s+(\d{1,2})(?:,?\s+(\d{4}))?""",
@@ -82,6 +139,23 @@ class ReminderParser(
     )
     private val enDateDayFirstRegex = Regex(
         """(\d{1,2})\s+(january|february|march|april|may|june|july|august|september|october|november|december|jan\.?|feb\.?|mar\.?|apr\.?|jun\.?|jul\.?|aug\.?|sep\.?|sept\.?|oct\.?|nov\.?|dec\.?)(?:\s+(\d{4}))?""",
+        RegexOption.IGNORE_CASE
+    )
+    private val esDateRegex = Regex(
+        """(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|ene\.?|feb\.?|mar\.?|abr\.?|jun\.?|jul\.?|ago\.?|sep\.?|oct\.?|nov\.?|dic\.?)\s+(\d{1,2})(?:,?\s+(\d{4}))?""",
+        RegexOption.IGNORE_CASE
+    )
+    private val esDateDayFirstRegex = Regex(
+        """(\d{1,2})\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|ene\.?|feb\.?|mar\.?|abr\.?|jun\.?|jul\.?|ago\.?|sep\.?|oct\.?|nov\.?|dic\.?)(?:\s+(\d{4}))?""",
+        RegexOption.IGNORE_CASE
+    )
+
+    private val deDateRegex = Regex(
+        """(januar|februar|märz|marz|april|mai|juni|juli|august|september|oktober|november|dezember|jan\.?|feb\.?|mär\.?|mar\.?|apr\.?|jun\.?|jul\.?|aug\.?|sep\.?|okt\.?|nov\.?|dez\.?)\s+(\d{1,2})(?:,?\s+(\d{4}))?""",
+        RegexOption.IGNORE_CASE
+    )
+    private val deDateDayFirstRegex = Regex(
+        """(\d{1,2})\s+(januar|februar|märz|marz|april|mai|juni|juli|august|september|oktober|november|dezember|jan\.?|feb\.?|mär\.?|mar\.?|apr\.?|jun\.?|jul\.?|aug\.?|sep\.?|okt\.?|nov\.?|dez\.?)(?:\s+(\d{4}))?""",
         RegexOption.IGNORE_CASE
     )
     private val numericDayFirstRegex = Regex("""(?:^|\s)(\d{1,2})[./](\d{1,2})(?:[./](\d{4}))?(?=\s|$)""")
@@ -99,23 +173,35 @@ class ReminderParser(
     private val ruDayAfterTomorrowRegex = Regex("""(?:^|\s)послезавтра(?=\s|$)""", RegexOption.IGNORE_CASE)
     private val enTomorrowRegex = Regex("""(?:^|\s)tomorrow(?=\s|$)""", RegexOption.IGNORE_CASE)
     private val enDayAfterTomorrowRegex = Regex("""(?:^|\s)day\s+after\s+tomorrow(?=\s|$)""", RegexOption.IGNORE_CASE)
+    private val esTomorrowRegex = Regex("""(?:^|\s)mañana(?=\s|$)""", RegexOption.IGNORE_CASE)
+    private val esDayAfterTomorrowRegex = Regex("""(?:^|\s)pasado\s+mañana(?=\s|$)""", RegexOption.IGNORE_CASE)
+    private val deTomorrowRegex = Regex("""(?:^|\s)morgen(?=\s|$)""", RegexOption.IGNORE_CASE)
+    private val deDayAfterTomorrowRegex = Regex("""(?:^|\s)(?:übermorgen|uebermorgen)(?=\s|$)""", RegexOption.IGNORE_CASE)
     private val ruInWeeksRegex = Regex(
         """(?:^|\s)через\s+(\d{1,2}|один|одну|два|две|три|четыре)\s+недел(?:ю|и|ь)(?=\s|$)""",
         RegexOption.IGNORE_CASE
     )
     private val enInWeeksRegex = Regex("""(?:^|\s)in\s+(\d{1,2})\s+weeks?(?=\s|$)""", RegexOption.IGNORE_CASE)
+    private val esInWeeksRegex = Regex("""(?:^|\s)en\s+(\d{1,2})\s+semanas?(?=\s|$)""", RegexOption.IGNORE_CASE)
+    private val deInWeeksRegex = Regex("""(?:^|\s)in\s+(\d{1,2})\s+wochen?(?=\s|$)""", RegexOption.IGNORE_CASE)
     private val ruInHoursRegex = Regex("""(?:^|\s)через\s+(\d{1,3})\s+час(?:а|ов)?(?=\s|$)""", RegexOption.IGNORE_CASE)
     private val enInHoursRegex = Regex("""(?:^|\s)in\s+(\d{1,3})\s+hours?(?=\s|$)""", RegexOption.IGNORE_CASE)
+    private val esInHoursRegex = Regex("""(?:^|\s)en\s+(\d{1,3})\s+horas?(?=\s|$)""", RegexOption.IGNORE_CASE)
+    private val deInHoursRegex = Regex("""(?:^|\s)in\s+(\d{1,3})\s+stunden?(?=\s|$)""", RegexOption.IGNORE_CASE)
     private val ruDurationRegex = Regex("""(?:^|\s)на\s+(\d{1,3})\s*(мин(?:ут[ауы]?)?|час(?:а|ов)?)(?=\s|$)""", RegexOption.IGNORE_CASE)
     private val enDurationRegex = Regex("""(?:^|\s)for\s+(\d{1,3})\s*(minutes?|mins?|hours?|hrs?|hr)(?=\s|$)""", RegexOption.IGNORE_CASE)
+    private val esDurationRegex = Regex("""(?:^|\s)(?:por|durante)\s+(\d{1,3})\s*(min(?:utos?)?|horas?)(?=\s|$)""", RegexOption.IGNORE_CASE)
+    private val deDurationRegex = Regex("""(?:^|\s)für\s+(\d{1,3})\s*(minute|minuten|stunde|stunden)(?=\s|$)""", RegexOption.IGNORE_CASE)
 
     private val cleanupRegex = Regex(
-        """(?:^|\s)(мне\s+нужно|нужно|напомни|напомнить|встреча|встретиться|встречу|создай\s+напоминание|добавь\s+напоминание|meeting|meet|schedule|remind\s+me|set\s+reminder|tavataan|tavata)(?=\s|$)""",
+        """(?:^|\s)(мне\s+нужно|нужно|напомни|напомнить|встреча|встретиться|встречу|создай\s+напоминание|добавь\s+напоминание|meeting|meet|schedule|remind\s+me|set\s+reminder|tavataan|tavata|recuérdame|recordar|recordarme|reunión|reunirse|reunir|erinnere|erinnern|treffen|termin)(?=\s|$)""",
         RegexOption.IGNORE_CASE
     )
-    private val ruLocationAtEndRegex = Regex("""(?:^|\s)в\s+([\p{L}][\p{L}\p{N}\s\-"']{1,80})$""", RegexOption.IGNORE_CASE)
-    private val enLocationAtEndRegex = Regex("""(?:^|\s)at\s+([\p{L}][\p{L}\p{N}\s\-"']{1,80})$""", RegexOption.IGNORE_CASE)
-    private val fiLocationAtEndRegex = Regex("""(?:^|\s)([\p{L}][\p{L}\p{N}\s\-"']{1,80}(?:ssa|ssä|sta|stä|lla|llä|lta|ltä|lle|iin))$""", RegexOption.IGNORE_CASE)
+    private val ruLocationAtEndRegex = Regex("""(?:^|\s)в\s+([\p{L}][\p{L}\p{N}\s\-\"']{1,80})$""", RegexOption.IGNORE_CASE)
+    private val enLocationAtEndRegex = Regex("""(?:^|\s)at\s+([\p{L}][\p{L}\p{N}\s\-\"']{1,80})$""", RegexOption.IGNORE_CASE)
+    private val fiLocationAtEndRegex = Regex("""(?:^|\s)([\p{L}][\p{L}\p{N}\s\-\"']{1,80}(?:ssa|ssä|sta|stä|lla|llä|lta|ltä|lle|iin))$""", RegexOption.IGNORE_CASE)
+    private val esLocationAtEndRegex = Regex("""(?:^|\s)en\s+([\p{L}][\p{L}\p{N}\s\-\"']{1,80})$""", RegexOption.IGNORE_CASE)
+    private val deLocationAtEndRegex = Regex("""(?:^|\s)(?:in|bei)\s+([\p{L}][\p{L}\p{N}\s\-\"']{1,80})$""", RegexOption.IGNORE_CASE)
 
     fun parse(rawText: String): ParsedReminder? {
         val text = rawText.trim().lowercase(Locale.ROOT)
@@ -180,6 +266,22 @@ class ReminderParser(
             return ParsedDuration(rawPart = match.value.trim(), durationMinutes = minutes)
         }
 
+        esDurationRegex.find(text)?.let { match ->
+            val value = match.groupValues[1].toIntOrNull() ?: return null
+            if (value <= 0) return null
+            val unit = match.groupValues[2].lowercase(Locale.ROOT)
+            val minutes = if (unit.startsWith("hor")) value * 60 else value
+            return ParsedDuration(rawPart = match.value.trim(), durationMinutes = minutes)
+        }
+
+        deDurationRegex.find(text)?.let { match ->
+            val value = match.groupValues[1].toIntOrNull() ?: return null
+            if (value <= 0) return null
+            val unit = match.groupValues[2].lowercase(Locale.ROOT)
+            val minutes = if (unit.startsWith("stund") || unit.startsWith("stu")) value * 60 else value
+            return ParsedDuration(rawPart = match.value.trim(), durationMinutes = minutes)
+        }
+
         return null
     }
 
@@ -210,6 +312,46 @@ class ReminderParser(
                 rawPart = match.value.trim(),
                 day = match.groupValues[1].toIntOrNull() ?: return null,
                 month = enMonths[monthKey] ?: return null,
+                year = match.groupValues[3].toIntOrNull()
+            )
+        }
+
+        esDateRegex.find(text)?.let { match ->
+            val monthKey = normalizeMonthToken(match.groupValues[1])
+            return AbsoluteDateMatch(
+                rawPart = match.value.trim(),
+                day = match.groupValues[2].toIntOrNull() ?: return null,
+                month = esMonths[monthKey] ?: return null,
+                year = match.groupValues[3].toIntOrNull()
+            )
+        }
+
+        esDateDayFirstRegex.find(text)?.let { match ->
+            val monthKey = normalizeMonthToken(match.groupValues[2])
+            return AbsoluteDateMatch(
+                rawPart = match.value.trim(),
+                day = match.groupValues[1].toIntOrNull() ?: return null,
+                month = esMonths[monthKey] ?: return null,
+                year = match.groupValues[3].toIntOrNull()
+            )
+        }
+
+        deDateRegex.find(text)?.let { match ->
+            val monthKey = normalizeMonthToken(match.groupValues[1])
+            return AbsoluteDateMatch(
+                rawPart = match.value.trim(),
+                day = match.groupValues[2].toIntOrNull() ?: return null,
+                month = deMonths[monthKey] ?: return null,
+                year = match.groupValues[3].toIntOrNull()
+            )
+        }
+
+        deDateDayFirstRegex.find(text)?.let { match ->
+            val monthKey = normalizeMonthToken(match.groupValues[2])
+            return AbsoluteDateMatch(
+                rawPart = match.value.trim(),
+                day = match.groupValues[1].toIntOrNull() ?: return null,
+                month = deMonths[monthKey] ?: return null,
                 year = match.groupValues[3].toIntOrNull()
             )
         }
@@ -296,6 +438,40 @@ class ReminderParser(
             )
         }
 
+        esInWeeksRegex.find(text)?.let { match ->
+            val weeks = match.groupValues[1].toLongOrNull() ?: return null
+            if (weeks <= 0L) return null
+
+            val parsedTime = parseTime(text)
+            val hour = parsedTime?.hour ?: defaultTime.hour
+            val minute = parsedTime?.minute ?: defaultTime.minute
+            if (hour !in 0..23 || minute !in 0..59) return null
+
+            return RelativeDateMatch(
+                datePart = match.value.trim(),
+                timePart = parsedTime?.rawPart,
+                dateTime = LocalDateTime.of(now.toLocalDate().plusWeeks(weeks), LocalTime.of(hour, minute)),
+                usedDefaultTime = parsedTime == null
+            )
+        }
+
+        deInWeeksRegex.find(text)?.let { match ->
+            val weeks = match.groupValues[1].toLongOrNull() ?: return null
+            if (weeks <= 0L) return null
+
+            val parsedTime = parseTime(text)
+            val hour = parsedTime?.hour ?: defaultTime.hour
+            val minute = parsedTime?.minute ?: defaultTime.minute
+            if (hour !in 0..23 || minute !in 0..59) return null
+
+            return RelativeDateMatch(
+                datePart = match.value.trim(),
+                timePart = parsedTime?.rawPart,
+                dateTime = LocalDateTime.of(now.toLocalDate().plusWeeks(weeks), LocalTime.of(hour, minute)),
+                usedDefaultTime = parsedTime == null
+            )
+        }
+
         ruInHoursRegex.find(text)?.let { match ->
             val hours = match.groupValues[1].toLongOrNull() ?: return null
             if (hours <= 0L) return null
@@ -318,16 +494,42 @@ class ReminderParser(
             )
         }
 
+        esInHoursRegex.find(text)?.let { match ->
+            val hours = match.groupValues[1].toLongOrNull() ?: return null
+            if (hours <= 0L) return null
+            return RelativeDateMatch(
+                datePart = match.value.trim(),
+                timePart = null,
+                dateTime = now.plusHours(hours),
+                usedDefaultTime = false
+            )
+        }
+
+        deInHoursRegex.find(text)?.let { match ->
+            val hours = match.groupValues[1].toLongOrNull() ?: return null
+            if (hours <= 0L) return null
+            return RelativeDateMatch(
+                datePart = match.value.trim(),
+                timePart = null,
+                dateTime = now.plusHours(hours),
+                usedDefaultTime = false
+            )
+        }
+
         val dayShift = when {
-            ruDayAfterTomorrowRegex.containsMatchIn(text) || enDayAfterTomorrowRegex.containsMatchIn(text) -> 2L
-            ruTomorrowRegex.containsMatchIn(text) || enTomorrowRegex.containsMatchIn(text) -> 1L
+            ruDayAfterTomorrowRegex.containsMatchIn(text) || enDayAfterTomorrowRegex.containsMatchIn(text) || esDayAfterTomorrowRegex.containsMatchIn(text) || deDayAfterTomorrowRegex.containsMatchIn(text) -> 2L
+            ruTomorrowRegex.containsMatchIn(text) || enTomorrowRegex.containsMatchIn(text) || esTomorrowRegex.containsMatchIn(text) || deTomorrowRegex.containsMatchIn(text) -> 1L
             else -> return null
         }
 
         val datePart = enDayAfterTomorrowRegex.find(text)?.value
             ?: ruDayAfterTomorrowRegex.find(text)?.value
+            ?: esDayAfterTomorrowRegex.find(text)?.value
+            ?: deDayAfterTomorrowRegex.find(text)?.value
             ?: enTomorrowRegex.find(text)?.value
             ?: ruTomorrowRegex.find(text)?.value
+            ?: esTomorrowRegex.find(text)?.value
+            ?: deTomorrowRegex.find(text)?.value
             ?: return null
 
         val parsedTime = parseTime(text)
@@ -461,15 +663,27 @@ class ReminderParser(
     }
 
     private fun extractLocationFromTitle(baseTitle: String): Pair<String, String?> {
-        val match = ruLocationAtEndRegex.find(baseTitle)
-            ?: enLocationAtEndRegex.find(baseTitle)
-            ?: fiLocationAtEndRegex.find(baseTitle)
+        var match: MatchResult? = null
+        var isFinnish = false
+
+        ruLocationAtEndRegex.find(baseTitle)?.let { match = it }
+        if (match == null) enLocationAtEndRegex.find(baseTitle)?.let { match = it }
+        if (match == null) esLocationAtEndRegex.find(baseTitle)?.let { match = it }
+        if (match == null) deLocationAtEndRegex.find(baseTitle)?.let { match = it }
+        if (match == null) fiLocationAtEndRegex.find(baseTitle)?.let { match = it; isFinnish = true }
+
         if (match == null) {
             return baseTitle to null
         }
 
         val rawLocation = match.groupValues[1].trim().trim(',', '.', ';', ':')
-        val location = normalizeFinnishLocationCase(rawLocation)
+        val location = if (isFinnish) {
+            normalizeFinnishLocationCase(rawLocation)
+        } else {
+            // Keep original casing/format for other languages (tests expect original form)
+            rawLocation
+        }
+
         if (!isLikelyLocation(location)) {
             return baseTitle to null
         }
