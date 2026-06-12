@@ -93,6 +93,9 @@ object WordsToNumber {
         val result = total + current
         if (seenAny && result in 0..9999) return result
 
+        // Try English parsing (basic)
+        parseEnglish(cleaned)?.let { return it }
+
         // Try Finnish parsing (basic)
         val fiClean = cleaned.replace('ä', 'a').replace('ö', 'o').replace('å', 'a').replace('š', 's').replace('ž', 'z')
         val fiTokens = fiClean.split(Regex("\\s+"))
@@ -102,17 +105,17 @@ object WordsToNumber {
 
         val fiUnits = mapOf(
             "nolla" to 0,
-            "yksi" to 1, "kaksi" to 2, "kolme" to 3, "nelja" to 4, "viisi" to 5,
-            "kuusi" to 6, "seitseman" to 7, "kahdeksan" to 8, "yhdeksan" to 9
+            "yksi" to 1, "yks" to 1, "kaksi" to 2, "kaks" to 2, "kolme" to 3, "kolm" to 3,
+            "nelja" to 4, "nel" to 4, "viisi" to 5, "viis" to 5,
+            "kuusi" to 6, "kuus" to 6, "seitseman" to 7, "seitsema" to 7, "kahdeksan" to 8, "yhdeksan" to 9
         )
         val fiTeens = mapOf(
-            "kymmenen" to 10, "yksitoista" to 11, "kaksitoista" to 12
+            "kymmenen" to 10, "yksitoista" to 11, "kaksitoista" to 12, "kolmetoista" to 13, "neljatoista" to 14
         )
         val fiTens = mapOf(
             "kaksikymmenta" to 20, "kolmekymmenta" to 30, "neljakymmenta" to 40,
-            "viisikymmenta" to 50, "kuusikymmenta" to 60
+            "viisikymmenta" to 50, "kuusikymmenta" to 60, "seitsemankymmenta" to 70, "kahdeksankymmenta" to 80, "yhdeksankymmenta" to 90
         )
-        // 'sata' family -> 100
         val fiHundredWords = setOf("sata", "sataa")
         val fiThousandWords = setOf("tuhat", "tuhatta")
 
@@ -149,27 +152,46 @@ object WordsToNumber {
                     fiSeen = true
                 }
 
-                // compound like 'kuusisataa' or 'kaksituhatta'
-                t2.endsWith("sataa") || t2.endsWith("sata") -> {
-                    val prefix = if (t2.endsWith("sataa")) t2.removeSuffix("sataa") else t2.removeSuffix("sata")
-                    val pval = fiUnits[prefix]
-                    if (pval != null) {
+                // compound like 'kuusisataa' or 'kaksituhatta' or hyphenated
+                t2.contains("sata") -> {
+                    val prefix = t2.replace("sataa", "").replace("sata", "")
+                    val pval = fiUnits[prefix] ?: fiUnits[prefix.removeSuffix("n")] ?: 0
+                    if (pval > 0) {
                         fiCurrent += pval * 100
                         fiSeen = true
                     }
                 }
 
-                t2.endsWith("tuhat") || t2.endsWith("tuhatta") -> {
-                    val prefix = if (t2.endsWith("tuhatta")) t2.removeSuffix("tuhatta") else t2.removeSuffix("tuhat")
-                    val pval = fiUnits[prefix]
-                    if (pval != null) {
+                t2.contains("tuhat") || t2.contains("tuhatta") -> {
+                    val prefix = t2.replace("tuhatta", "").replace("tuhat", "")
+                    val pval = fiUnits[prefix] ?: fiUnits[prefix.removeSuffix("n")] ?: 0
+                    if (pval > 0) {
                         fiTotal += pval * 1000
                         fiSeen = true
                     }
                 }
 
                 else -> {
-                    // ignore unknown tokens
+                    // try to detect concatenated tens+units like 'kaksikymmentayksi'
+                    var handled = false
+                    for (tenKey in fiTens.keys) {
+                        if (t2.contains(tenKey)) {
+                            fiCurrent += fiTens[tenKey] ?: 0
+                            val leftover = t2.replace(tenKey, "")
+                            if (leftover.isNotBlank()) {
+                                val unitVal = fiUnits[leftover]
+                                    ?: fiUnits[leftover.removeSuffix("n")] // try removing suffix
+                                if (unitVal != null) fiCurrent += unitVal
+                            }
+                            fiSeen = true
+                            handled = true
+                            break
+                        }
+                    }
+
+                    if (!handled) {
+                        // ignore unknown tokens
+                    }
                 }
             }
         }

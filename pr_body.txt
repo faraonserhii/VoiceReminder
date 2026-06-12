@@ -1,0 +1,30 @@
+feature(bussi): international support
+
+This PR adds internationalization groundwork for the Bussi‑Aika feature:
+
+- Add English parsing for spoken numbers (`WordsToNumber.kt`) — supports up to 9999 and handles forms like "one hundred twenty three" and digit tokens.
+- Introduce `TransportProvider` abstraction and a `DigitransitProvider` implementation to encapsulate Digitransit GraphQL calls and response parsing.
+- Move `BusDeparture` to its own model type for reuse by providers.
+- Add a reverse‑geocoding country check (Open‑Meteo) and Overpass fallback to discover a nearby stop when Digitransit is not available for the detected country.
+- Add minimal translations for English (`values-en`) and Finnish (`values-fi`) for bus-related UI/TTS strings.
+
+Notes for reviewers / testers:
+- Build & smoke test: `./gradlew :app:assembleDebug`
+- Run app on device/emulator in Finland: ask for a route (e.g. "600") — Digitransit provider should return a departure and TTS should speak the result.
+- Test outside Finland: app will try to reverse‑geocode country; if not FI, the app will attempt to find a nearest stop via Overpass and will inform user that Digitransit schedules are not available for that country.
+- Test English voice input: try spoken numbers like "one hundred twenty three" and numeric/alphanumeric routes like "600A".
+
+Planned followups (not included in this PR):
+- Implement additional transport providers (GTFS/transit.land) to provide schedules in more countries.
+- Expand `WordsToNumber` to cover more languages and edge cases.
+- Add unit tests for `WordsToNumber` and provider parsing logic.
+
+Base: master
+Branch: feature/international-bussi
+
+Checklist:
+- [x] Build succeeds
+- [x] Branch pushed
+- [ ] Manual device tests
+
+
