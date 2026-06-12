@@ -7,6 +7,10 @@ import org.json.JSONObject
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
+import com.proapps.voiceremind.transport.gtfs.GTFSParser
+import com.proapps.voiceremind.transport.gtfs.GTFSFeed
+
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Minimal TransitLand provider: attempts to find nearby stops via transit.land REST API.
@@ -15,6 +19,8 @@ import java.time.ZoneId
  */
 class TransitLandProvider : TransportProvider {
     private val client = OkHttpClient()
+    private val feedCache: MutableMap<String, Pair<GTFSFeed, Long>> = ConcurrentHashMap()
+    private val feedTtlMs: Long = 1000L * 60L * 60L * 6L // 6 hours
 
     override fun supportsRegion(countryCode: String?): Boolean {
         // transit.land is global; accept all
@@ -38,6 +44,136 @@ class TransitLandProvider : TransportProvider {
                     val stop = stops.getJSONObject(i)
                     val name = stop.optString("name")
                     val onestopId = stop.optString("onestop_id", null)
+
+                    // HYBRID: attempt to discover GTFS feed URLs from stop JSON and use GTFS for precise departures
+                    try {
+                        val feedUrls = mutableListOf<String>()
+                        val feedFields = listOf("feeds", "served_feeds", "associated_feeds", "feed_urls", "feeds_onestop_ids")
+                        for (f in feedFields) {
+                            val arr = stop.optJSONArray(f)
+                            if (arr != null) {
+                                for (k in 0 until arr.length()) {
+                                    val el = arr.get(k)
+                                    if (el is String) feedUrls.add(el)
+                                    else if (el is JSONObject) {
+                                        val u = el.optString("url", el.optString("feed_url", el.optString("download_url", "")))
+                                        if (!u.isNullOrBlank()) feedUrls.add(u)
+                                    }
+                                }
+                            }
+                        }
+
+                        // sometimes stop object contains a nested 'feeds' object with metadata
+                        if (feedUrls.isEmpty()) {
+                            val maybeFeeds = stop.optJSONArray("feed_onestop_ids")
+                            if (maybeFeeds != null) for (k in 0 until maybeFeeds.length()) feedUrls.add(maybeFeeds.optString(k))
+                        }
+
+                        // Try parsing each feed URL via GTFSParser (cached)
+                        for (fuRaw in feedUrls) {
+                            try {
+                                val fu = resolveFeedUrlIfNeeded(fuRaw) ?: fuRaw
+                                val now = System.currentTimeMillis()
+                                val cached = feedCache[fu]
+                                var feed: GTFSFeed? = null
+                                if (cached != null && now - cached.second < feedTtlMs) {
+                                    feed = cached.first
+                                } else {
+                                    val parsed = GTFSParser.downloadAndParse(fu)
+                                    if (parsed != null) {
+                                        feedCache[fu] = Pair(parsed, now)
+                                        feed = parsed
+                                    }
+                                }
+
+                                if (feed != null) {
+                                    // try exact GTFS stop_id mapping first
+                                    val gtfsStopId = extractGtfsStopId(stop)
+                                    if (!gtfsStopId.isNullOrBlank()) {
+                                        val times = feed.stopTimes[gtfsStopId] ?: emptyList()
+                                        if (times.isNotEmpty()) {
+                                            val nowMs = System.currentTimeMillis()
+                                            var bestEpoch: Long? = null
+                                            var bestHeadsign: String? = null
+                                            for ((secs, tripId) in times) {
+                                                val epoch = GTFSParser.secondsTodayToEpochMillis(secs)
+                                                if (epoch >= nowMs) {
+                                                    val trip = feed.trips[tripId]
+                                                    val route = trip?.routeId?.let { feed.routes[it] }
+                                                    val routeMatches = when {
+                                                        route?.shortName != null -> route.shortName.equals(routeNumber, ignoreCase = true) || route.shortName.contains(routeNumber, ignoreCase = true)
+                                                        trip?.headsign != null -> trip.headsign.contains(routeNumber, ignoreCase = true)
+                                                        else -> true
+                                                    }
+                                                    if (!routeMatches) continue
+                                                    if (bestEpoch == null || epoch < bestEpoch) {
+                                                        bestEpoch = epoch
+                                                        bestHeadsign = trip?.headsign
+                                                    }
+                                                }
+                                            }
+                                            if (bestEpoch != null) {
+                                                val minutes = ((bestEpoch - System.currentTimeMillis()) / 60000).toInt()
+                                                return BusDeparture(
+                                                    route = routeNumber,
+                                                    stopName = feed.stops.firstOrNull { it.stopId == gtfsStopId }?.name ?: name,
+                                                    headsign = bestHeadsign,
+                                                    departureEpochMillis = bestEpoch,
+                                                    minutesUntil = minutes,
+                                                    realtime = false
+                                                )
+                                            }
+                                        }
+                                    }
+                                    // fallback: try find matching GTFS stop by name (best-effort)
+                                    val stopNameLc = name?.lowercase() ?: ""
+                                    val matched = feed.stops.firstOrNull { it.name.lowercase().contains(stopNameLc) || stopNameLc.contains(it.name.lowercase()) }
+                                    if (matched != null) {
+                                        val times = feed.stopTimes[matched.stopId] ?: emptyList()
+                                        val nowMs = System.currentTimeMillis()
+                                        var bestEpoch: Long? = null
+                                        var bestHeadsign: String? = null
+                                        var bestRealtime = false
+                                        for ((secs, tripId) in times) {
+                                            val epoch = GTFSParser.secondsTodayToEpochMillis(secs)
+                                            if (epoch >= nowMs) {
+                                                // route matching: check route short name or trip headsign
+                                                val trip = feed.trips[tripId]
+                                                val route = trip?.routeId?.let { feed.routes[it] }
+                                                val routeMatches = when {
+                                                    route?.shortName != null -> route.shortName.equals(routeNumber, ignoreCase = true) || route.shortName.contains(routeNumber, ignoreCase = true)
+                                                    trip?.headsign != null -> trip.headsign.contains(routeNumber, ignoreCase = true)
+                                                    else -> true
+                                                }
+                                                if (!routeMatches) continue
+                                                if (bestEpoch == null || epoch < bestEpoch) {
+                                                    bestEpoch = epoch
+                                                    bestHeadsign = trip?.headsign
+                                                }
+                                            }
+                                        }
+                                        if (bestEpoch != null) {
+                                            val minutes = ((bestEpoch - System.currentTimeMillis()) / 60000).toInt()
+                                            return BusDeparture(
+                                                route = routeNumber,
+                                                stopName = matched.name,
+                                                headsign = bestHeadsign,
+                                                departureEpochMillis = bestEpoch,
+                                                minutesUntil = minutes,
+                                                realtime = false
+                                            )
+                                        }
+                                    }
+                                }
+                            } catch (_: Exception) {
+                                // try next feed URL
+                            }
+                        }
+                    } catch (_: Exception) {
+                        // ignore hybrid attempt errors
+                    }
+
+                    // hybrid helpers are implemented as class-level functions
 
                     if (!onestopId.isNullOrBlank()) {
                         // Try stop_schedules endpoint (transit.land v2)
@@ -190,6 +326,53 @@ class TransitLandProvider : TransportProvider {
         } catch (_: Exception) {
         }
         return -1L
+    }
+
+    // Resolve feed identifier (possibly onestop_id) to a download URL via transit.land feeds endpoint
+    private fun resolveFeedUrlIfNeeded(raw: String): String? {
+        try {
+            if (raw.startsWith("http")) return raw
+            val url = "https://transit.land/api/v2/rest/feeds?onestop_id=$raw&per_page=1"
+            val req = Request.Builder().url(url).get().build()
+            client.newCall(req).execute().use { r ->
+                if (!r.isSuccessful) return null
+                val b = r.body?.string() ?: return null
+                val jr = JSONObject(b)
+                val arr = jr.optJSONArray("feeds") ?: jr.optJSONArray("results") ?: jr.optJSONArray("data")
+                if (arr != null && arr.length() > 0) {
+                    val f = arr.getJSONObject(0)
+                    val download = f.optString("download_url", f.optString("url", f.optString("feed_url", "")))
+                    if (!download.isNullOrBlank()) return download
+                }
+            }
+        } catch (_: Exception) { }
+        return null
+    }
+
+    // Try to extract GTFS stop_id from transit.land stop JSON (identifiers, codes etc.)
+    private fun extractGtfsStopId(stopJson: org.json.JSONObject): String? {
+        try {
+            val candidates = listOf("gtfs_stop_id", "gtfs:stop_id", "stop_id", "feed_stop_id")
+            for (c in candidates) {
+                val v = stopJson.optString(c, "")
+                if (!v.isNullOrBlank()) return v
+            }
+            if (stopJson.has("identifiers")) {
+                val ids = stopJson.getJSONArray("identifiers")
+                for (i in 0 until ids.length()) {
+                    val idObj = ids.getJSONObject(i)
+                    val idType = idObj.optString("type", "").lowercase()
+                    val idVal = idObj.optString("identifier", idObj.optString("value", ""))
+                    if (idType.contains("gtfs") || idType.contains("stop_id") || idType.contains("feed:stop")) return idVal
+                }
+            }
+            if (stopJson.has("codes")) {
+                val codes = stopJson.getJSONObject("codes")
+                val gtfs = codes.optString("gtfs", "")
+                if (!gtfs.isNullOrBlank()) return gtfs
+            }
+        } catch (_: Exception) { }
+        return null
     }
 }
 
