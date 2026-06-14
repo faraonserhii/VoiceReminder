@@ -195,6 +195,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var busTimeText: TextView
     private lateinit var busMinutesText: TextView
     private lateinit var busRealtimeText: TextView
+    private lateinit var busSourceText: TextView
     private lateinit var busProgress: View
 
     private val requestCalendarPermissions = registerForActivityResult(
@@ -476,6 +477,7 @@ class MainActivity : AppCompatActivity() {
         busTimeText = findViewById(R.id.busTimeText)
         busMinutesText = findViewById(R.id.busMinutesText)
         busRealtimeText = findViewById(R.id.busRealtimeText)
+        busSourceText = findViewById(R.id.busSourceText)
         busProgress = findViewById(R.id.busProgress)
         editPendingButton = findViewById(R.id.editPendingButton)
         clearDraftButton = findViewById(R.id.clearDraftButton)
@@ -2293,6 +2295,7 @@ class MainActivity : AppCompatActivity() {
             busTimeText.text = ""
             busMinutesText.text = ""
             busRealtimeText.text = ""
+            busSourceText.text = ""
             return
         }
 
@@ -2304,6 +2307,7 @@ class MainActivity : AppCompatActivity() {
             busTimeText.text = getString(R.string.bus_schedule_unsupported_note)
             busMinutesText.text = ""
             busRealtimeText.text = ""
+            busSourceText.text = departure.source ?: "synthetic"
             return
         }
 
@@ -2314,6 +2318,7 @@ class MainActivity : AppCompatActivity() {
         busTimeText.text = "Отправление: $dt"
         busMinutesText.text = if (departure.minutesUntil == 0) "Сейчас" else "Через ${departure.minutesUntil} мин"
         busRealtimeText.text = if (departure.realtime) "Данные: в реальном времени" else "Данные: расписание"
+        busSourceText.text = departure.source ?: ""
     }
 
     private fun handleWastePickupCommand(rawText: String): Boolean {

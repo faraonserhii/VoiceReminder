@@ -12,5 +12,8 @@ data class BusDeparture(
     val departureEpochMillis: Long,
     val minutesUntil: Int,
     val realtime: Boolean
+    ,
+    // simple source tag for UI/debug (e.g. "GTFS-disk", "GTFS-network", "stop_schedules", "synthetic")
+    val source: String? = null
 )
 

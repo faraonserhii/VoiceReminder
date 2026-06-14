@@ -19,16 +19,19 @@ import java.time.DayOfWeek
 object GTFSParser {
     private val client = OkHttpClient()
 
-    fun downloadAndParse(feedUrl: String, cacheDir: File? = null, cacheTtlMs: Long = 1000L * 60L * 60L * 6L): GTFSFeed? {
+    // Returns a pair of (GTFSFeed, usedCacheFlag) where usedCacheFlag==true if a cached file was used.
+    fun downloadAndParse(feedUrl: String, cacheDir: File? = null, cacheTtlMs: Long = 1000L * 60L * 60L * 6L): Pair<GTFSFeed, Boolean>? {
         try {
             // prepare zip input stream, using disk cache when possible
             var zipInputStream: ZipInputStream? = null
+            var usedCache = false
                 if (cacheDir != null) {
                     val key = sha1(feedUrl)
                     val cacheFile = File(cacheDir, "gtfs_$key.zip")
                     val now = System.currentTimeMillis()
                     if (cacheFile.exists() && now - cacheFile.lastModified() < cacheTtlMs) {
                         zipInputStream = ZipInputStream(FileInputStream(cacheFile))
+                        usedCache = true
                     } else {
                         // download and save to cache file
                         val req = Request.Builder().url(feedUrl).get().build()
@@ -42,6 +45,7 @@ object GTFSParser {
                             }
                             tmp.renameTo(cacheFile)
                             zipInputStream = ZipInputStream(FileInputStream(cacheFile))
+                            usedCache = false
                         }
                     }
                 } else {
@@ -51,6 +55,7 @@ object GTFSParser {
                         if (!it.isSuccessful) return null
                         val body = it.body?.byteStream() ?: return null
                         zipInputStream = ZipInputStream(body)
+                        usedCache = false
                     }
                 }
 
@@ -158,7 +163,7 @@ object GTFSParser {
                         }
                     } catch (_: Exception) { }
 
-                    return GTFSFeed(feedUrl, stops, routes, trips, stopTimes, active)
+                    return Pair(GTFSFeed(feedUrl, stops, routes, trips, stopTimes, active), usedCache)
                 }
         } catch (_: Exception) {
             return null

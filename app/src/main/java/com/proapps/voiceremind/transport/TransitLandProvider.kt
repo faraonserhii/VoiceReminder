@@ -77,13 +77,18 @@ class TransitLandProvider(private val context: Context? = null) : TransportProvi
                                 val now = System.currentTimeMillis()
                                 val cached = feedCache[fu]
                                 var feed: GTFSFeed? = null
+                                var parsedUsedCacheFlag: Boolean? = null
                                 if (cached != null && now - cached.second < feedTtlMs) {
                                     feed = cached.first
+                                    parsedUsedCacheFlag = true
                                 } else {
-                                    val parsed = GTFSParser.downloadAndParse(fu, context?.cacheDir)
-                                    if (parsed != null) {
-                                        feedCache[fu] = Pair(parsed, now)
-                                        feed = parsed
+                                    val parsedPair = GTFSParser.downloadAndParse(fu, context?.cacheDir)
+                                    if (parsedPair != null) {
+                                        val parsedFeed = parsedPair.first
+                                        val usedCache = parsedPair.second
+                                        feedCache[fu] = Pair(parsedFeed, now)
+                                        feed = parsedFeed
+                                        parsedUsedCacheFlag = usedCache
                                     }
                                 }
 
@@ -117,13 +122,20 @@ class TransitLandProvider(private val context: Context? = null) : TransportProvi
                                             }
                                             if (bestEpoch != null) {
                                                 val minutes = ((bestEpoch - System.currentTimeMillis()) / 60000).toInt()
+                                                val sourceLabel = when {
+                                                    cached != null -> "GTFS-disk"
+                                                    parsedUsedCacheFlag == true -> "GTFS-disk"
+                                                    parsedUsedCacheFlag == false -> "GTFS-network"
+                                                    else -> "GTFS"
+                                                }
                                                 return BusDeparture(
                                                     route = routeNumber,
                                                     stopName = feed.stops.firstOrNull { it.stopId == gtfsStopId }?.name ?: name,
                                                     headsign = bestHeadsign,
                                                     departureEpochMillis = bestEpoch,
                                                     minutesUntil = minutes,
-                                                    realtime = false
+                                                    realtime = false,
+                                                    source = sourceLabel
                                                 )
                                             }
                                         }
@@ -158,13 +170,20 @@ class TransitLandProvider(private val context: Context? = null) : TransportProvi
                                         }
                                         if (bestEpoch != null) {
                                             val minutes = ((bestEpoch - System.currentTimeMillis()) / 60000).toInt()
+                                            val sourceLabel = when {
+                                                cached != null -> "GTFS-disk"
+                                                parsedUsedCacheFlag == true -> "GTFS-disk"
+                                                parsedUsedCacheFlag == false -> "GTFS-network"
+                                                else -> "GTFS"
+                                            }
                                             return BusDeparture(
                                                 route = routeNumber,
                                                 stopName = matched.name,
                                                 headsign = bestHeadsign,
                                                 departureEpochMillis = bestEpoch,
                                                 minutesUntil = minutes,
-                                                realtime = false
+                                                realtime = false,
+                                                source = sourceLabel
                                             )
                                         }
                                     }
@@ -255,7 +274,8 @@ class TransitLandProvider(private val context: Context? = null) : TransportProvi
                                                 headsign = bestHeadsign,
                                                 departureEpochMillis = bestEpoch,
                                                 minutesUntil = minutes,
-                                                realtime = bestRealtime
+                                                realtime = bestRealtime,
+                                                source = "stop_schedules"
                                             )
                                         }
                                     }
@@ -274,7 +294,8 @@ class TransitLandProvider(private val context: Context? = null) : TransportProvi
                             headsign = null,
                             departureEpochMillis = 0L,
                             minutesUntil = -1,
-                            realtime = false
+                            realtime = false,
+                            source = "synthetic"
                         )
                     }
                 }
