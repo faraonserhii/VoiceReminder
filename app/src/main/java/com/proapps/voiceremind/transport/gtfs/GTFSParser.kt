@@ -4,6 +4,11 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.security.MessageDigest
+import java.math.BigInteger
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -14,13 +19,43 @@ import java.time.DayOfWeek
 object GTFSParser {
     private val client = OkHttpClient()
 
-    fun downloadAndParse(feedUrl: String): GTFSFeed? {
+    fun downloadAndParse(feedUrl: String, cacheDir: File? = null, cacheTtlMs: Long = 1000L * 60L * 60L * 6L): GTFSFeed? {
         try {
-            val req = Request.Builder().url(feedUrl).get().build()
-            client.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) return null
-                val body = resp.body?.byteStream() ?: return null
-                ZipInputStream(body).use { zis ->
+            // prepare zip input stream, using disk cache when possible
+            var zipInputStream: ZipInputStream? = null
+                if (cacheDir != null) {
+                    val key = sha1(feedUrl)
+                    val cacheFile = File(cacheDir, "gtfs_$key.zip")
+                    val now = System.currentTimeMillis()
+                    if (cacheFile.exists() && now - cacheFile.lastModified() < cacheTtlMs) {
+                        zipInputStream = ZipInputStream(FileInputStream(cacheFile))
+                    } else {
+                        // download and save to cache file
+                        val req = Request.Builder().url(feedUrl).get().build()
+                        val resp = client.newCall(req).execute()
+                        resp.use {
+                            if (!it.isSuccessful) return null
+                            val bodyStream = it.body?.byteStream() ?: return null
+                            val tmp = File(cacheDir, "gtfs_${key}.zip.tmp")
+                            FileOutputStream(tmp).use { fos ->
+                                bodyStream.copyTo(fos)
+                            }
+                            tmp.renameTo(cacheFile)
+                            zipInputStream = ZipInputStream(FileInputStream(cacheFile))
+                        }
+                    }
+                } else {
+                    val req = Request.Builder().url(feedUrl).get().build()
+                    val resp = client.newCall(req).execute()
+                    resp.use {
+                        if (!it.isSuccessful) return null
+                        val body = it.body?.byteStream() ?: return null
+                        zipInputStream = ZipInputStream(body)
+                    }
+                }
+
+                if (zipInputStream == null) return null
+                zipInputStream.use { zis ->
                     val stops = mutableListOf<GTFSStop>()
                     val routes = mutableMapOf<String, GTFSRoute>()
                     val trips = mutableMapOf<String, GTFSTrip>()
@@ -125,10 +160,15 @@ object GTFSParser {
 
                     return GTFSFeed(feedUrl, stops, routes, trips, stopTimes, active)
                 }
-            }
         } catch (_: Exception) {
             return null
         }
+    }
+
+    private fun sha1(input: String): String {
+        val md = MessageDigest.getInstance("SHA-1")
+        val digest = md.digest(input.toByteArray(Charsets.UTF_8))
+        return BigInteger(1, digest).toString(16).padStart(40, '0')
     }
 
     private fun parseCsv(reader: BufferedReader, rowHandler: (Map<String, String>) -> Unit) {

@@ -9,6 +9,7 @@ import java.time.Instant
 import java.time.ZoneId
 import com.proapps.voiceremind.transport.gtfs.GTFSParser
 import com.proapps.voiceremind.transport.gtfs.GTFSFeed
+import android.content.Context
 
 import java.util.concurrent.ConcurrentHashMap
 
@@ -17,7 +18,7 @@ import java.util.concurrent.ConcurrentHashMap
  * NOTE: This is a lightweight implementation and currently only discovers stops; full schedule
  * integration (GTFS/GTFS-RT) is a planned follow-up.
  */
-class TransitLandProvider : TransportProvider {
+class TransitLandProvider(private val context: Context? = null) : TransportProvider {
     private val client = OkHttpClient()
     private val feedCache: MutableMap<String, Pair<GTFSFeed, Long>> = ConcurrentHashMap()
     private val feedTtlMs: Long = 1000L * 60L * 60L * 6L // 6 hours
@@ -79,7 +80,7 @@ class TransitLandProvider : TransportProvider {
                                 if (cached != null && now - cached.second < feedTtlMs) {
                                     feed = cached.first
                                 } else {
-                                    val parsed = GTFSParser.downloadAndParse(fu)
+                                    val parsed = GTFSParser.downloadAndParse(fu, context?.cacheDir)
                                     if (parsed != null) {
                                         feedCache[fu] = Pair(parsed, now)
                                         feed = parsed
