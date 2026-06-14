@@ -420,6 +420,11 @@ class MainActivity : AppCompatActivity() {
 
         drawerLayout = findViewById(R.id.drawerLayout)
         openSettingsButton = findViewById(R.id.openSettingsButton)
+        val featuresMoreButton: Button = findViewById(R.id.featuresMoreButton)
+        featuresMoreButton.setOnClickListener {
+            if (drawerLayout.isDrawerOpen(GravityCompat.START)) drawerLayout.closeDrawer(GravityCompat.START)
+            else drawerLayout.openDrawer(GravityCompat.START)
+        }
         val busQuickButton: ImageButton = findViewById(R.id.busQuickButton)
         busQuickButton.setOnClickListener { showBusDialog() }
         openSettingsButton.setOnClickListener {

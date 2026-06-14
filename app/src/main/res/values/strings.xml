@@ -278,4 +278,15 @@
     <string name="tire_settings_policy_summer_hint">Летние шины (дд.ММ)</string>
     <string name="tire_settings_policy_winter_hint">Зимние шины (дд.ММ)</string>
     <string name="tire_settings_policy_error">Введите корректную дату в формате дд.ММ</string>
+    <!-- Data source labels for transport info (shown in UI) -->
+    <string name="source_gtfs_disk">GTFS (кэш)</string>
+    <string name="source_gtfs_network">GTFS (сеть)</string>
+    <string name="source_gtfs">GTFS</string>
+    <string name="source_stop_schedules">transit.land (stop_schedules)</string>
+    <string name="source_synthetic">синтетический</string>
+
+    <!-- Features overview shown on main screen -->
+    <string name="features_title">Возможности приложения</string>
+    <string name="features_list">• Голосовой ввод напоминаний\n• Сканирование текста с фото\n• Автоматическое сохранение в календарь\n• Гео‑напоминания для магазинов и посылок\n• Проверка времени автобуса (transit.land / GTFS)\n• Напоминания о лекарствах, парковке, сауне и др.</string>
+    <string name="features_more">Показать разделы и все функции</string>
 </resources>

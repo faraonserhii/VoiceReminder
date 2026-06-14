@@ -9,6 +9,7 @@ import java.time.Instant
 import java.time.ZoneId
 import com.proapps.voiceremind.transport.gtfs.GTFSParser
 import com.proapps.voiceremind.transport.gtfs.GTFSFeed
+import com.proapps.voiceremind.R
 import android.content.Context
 
 import java.util.concurrent.ConcurrentHashMap
@@ -123,10 +124,10 @@ class TransitLandProvider(private val context: Context? = null) : TransportProvi
                                             if (bestEpoch != null) {
                                                 val minutes = ((bestEpoch - System.currentTimeMillis()) / 60000).toInt()
                                                 val sourceLabel = when {
-                                                    cached != null -> "GTFS-disk"
-                                                    parsedUsedCacheFlag == true -> "GTFS-disk"
-                                                    parsedUsedCacheFlag == false -> "GTFS-network"
-                                                    else -> "GTFS"
+                                                    cached != null -> context?.getString(R.string.source_gtfs_disk) ?: "GTFS-disk"
+                                                    parsedUsedCacheFlag == true -> context?.getString(R.string.source_gtfs_disk) ?: "GTFS-disk"
+                                                    parsedUsedCacheFlag == false -> context?.getString(R.string.source_gtfs_network) ?: "GTFS-network"
+                                                    else -> context?.getString(R.string.source_gtfs) ?: "GTFS"
                                                 }
                                                 return BusDeparture(
                                                     route = routeNumber,
@@ -171,10 +172,10 @@ class TransitLandProvider(private val context: Context? = null) : TransportProvi
                                         if (bestEpoch != null) {
                                             val minutes = ((bestEpoch - System.currentTimeMillis()) / 60000).toInt()
                                             val sourceLabel = when {
-                                                cached != null -> "GTFS-disk"
-                                                parsedUsedCacheFlag == true -> "GTFS-disk"
-                                                parsedUsedCacheFlag == false -> "GTFS-network"
-                                                else -> "GTFS"
+                                                cached != null -> context?.getString(R.string.source_gtfs_disk) ?: "GTFS-disk"
+                                                parsedUsedCacheFlag == true -> context?.getString(R.string.source_gtfs_disk) ?: "GTFS-disk"
+                                                parsedUsedCacheFlag == false -> context?.getString(R.string.source_gtfs_network) ?: "GTFS-network"
+                                                else -> context?.getString(R.string.source_gtfs) ?: "GTFS"
                                             }
                                             return BusDeparture(
                                                 route = routeNumber,
@@ -275,7 +276,7 @@ class TransitLandProvider(private val context: Context? = null) : TransportProvi
                                                 departureEpochMillis = bestEpoch,
                                                 minutesUntil = minutes,
                                                 realtime = bestRealtime,
-                                                source = "stop_schedules"
+                                                source = context?.getString(R.string.source_stop_schedules) ?: "stop_schedules"
                                             )
                                         }
                                     }
@@ -290,12 +291,12 @@ class TransitLandProvider(private val context: Context? = null) : TransportProvi
                     if (i == 0) {
                         return BusDeparture(
                             route = routeNumber,
-                            stopName = if (name.isNullOrBlank()) "stop" else name,
+                            stopName = if (name.isNullOrBlank()) (context?.getString(R.string.bus_no_stop_found_label) ?: "stop") else name,
                             headsign = null,
                             departureEpochMillis = 0L,
                             minutesUntil = -1,
                             realtime = false,
-                            source = "synthetic"
+                            source = context?.getString(R.string.source_synthetic) ?: "synthetic"
                         )
                     }
                 }
